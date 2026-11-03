@@ -1,4 +1,4 @@
-# MSML635 Week 1 prototype
+# MSML635 prototype
 
 Minimal reference implementation for the team's integration milestone. It is **not** the completed research project and has not been benchmarked across seeds.
 
