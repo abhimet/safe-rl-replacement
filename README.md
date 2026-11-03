@@ -27,7 +27,7 @@ Outputs are CSV training logs and `.pt` model weights in `results/`.
 - Reward values, layouts, and hyperparameters are initial test settings, not final tuned choices.
 - For the final project, add validation for safe-action edge cases, multiple layouts, fixed-mixture/adaptive methods, shield-off evaluation and multi-seed comparisons.
 
-## Abhiram's Week 1 evaluation tools
+##  evaluation tools
 
 After installing requirements, run:
 
