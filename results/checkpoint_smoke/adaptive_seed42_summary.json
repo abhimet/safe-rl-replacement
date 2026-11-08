@@ -1,0 +1,14 @@
+{
+  "method": "adaptive",
+  "seed": 42,
+  "size": 6,
+  "episodes": 5,
+  "window": 100,
+  "penalty": 1.0,
+  "success_rate": 0.0,
+  "collision_rate": 0.0,
+  "average_reward": -10.0,
+  "average_steps": 100.0,
+  "unsafe_proposal_rate": 0.522,
+  "intervention_rate": 0.522
+}

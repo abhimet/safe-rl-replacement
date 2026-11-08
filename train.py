@@ -25,6 +25,9 @@ def train(method='random_safe', episodes=300, seed=42, output='results', size=6,
     agent = DQNAgent(seed=seed)
     tracker = UnsafeRateTracker(window=window)
     rows = []
+    out = Path(output)
+    out.mkdir(parents=True, exist_ok=True)
+
     for episode in range(episodes):
         obs, _ = env.reset(seed=seed + episode)
         total_reward = 0.0
@@ -52,11 +55,24 @@ def train(method='random_safe', episodes=300, seed=42, output='results', size=6,
             obs = next_obs
             if terminated or truncated:
                 break
-        rows.append({'episode': episode + 1, 'reward': round(total_reward, 4),
-                     'steps': env.steps, 'success': int(info['success']), 'collision': int(info['collision']),
-                     'unsafe_proposals': unsafe_count, 'interventions': intervention_count,
-                     'random_replacements': selected_random, 'value_replacements': selected_value,
-                     'adaptive_rate': round(tracker.rate, 4)})
+        rows.append({
+            'episode': episode + 1,
+            'reward': round(total_reward, 4),
+            'steps': env.steps,
+            'success': int(info['success']),
+            'collision': int(info['collision']),
+            'unsafe_proposals': unsafe_count,
+            'interventions': intervention_count,
+            'random_replacements': selected_random,
+            'value_replacements': selected_value,
+            'adaptive_rate': round(tracker.rate, 4)
+        })
+        if (episode + 1) % 50 == 0:
+            checkpoint_path = (
+                out / f"{method}_seed{seed}_ep{episode + 1}.pt"
+            )
+            torch.save(agent.online.state_dict(), checkpoint_path)
+            print(f"Saved checkpoint: {checkpoint_path}")
     out = Path(output)
     out.mkdir(parents=True, exist_ok=True)
     prefix = f'{method}_seed{seed}'
