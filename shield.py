@@ -1,5 +1,9 @@
 """Shield safety rules are fixed across all shielded methods."""
+METHODS = ('unshielded', 'random_safe', 'value_based', 'value_penalty', 'fixed_mix', 'adaptive')
+
 def choose_action(env, proposed_action, method, q_values=None, rng=None, random_probability=None):
+    if method not in METHODS:
+        raise ValueError(f'Unknown method: {method}')
     if method == 'unshielded':
         return proposed_action, False, 'none'
     safe = env.safe_actions()
