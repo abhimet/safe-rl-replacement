@@ -1,0 +1,134 @@
+{
+  "smoke_runs": [
+    {
+      "method": "unshielded",
+      "size": 6,
+      "episodes": 5,
+      "total_steps": 67
+    },
+    {
+      "method": "random_safe",
+      "size": 6,
+      "episodes": 5,
+      "total_steps": 288
+    },
+    {
+      "method": "value_based",
+      "size": 6,
+      "episodes": 5,
+      "total_steps": 372
+    },
+    {
+      "method": "value_penalty",
+      "size": 6,
+      "episodes": 5,
+      "total_steps": 418
+    },
+    {
+      "method": "fixed_mix",
+      "size": 6,
+      "episodes": 5,
+      "total_steps": 256
+    },
+    {
+      "method": "adaptive",
+      "size": 6,
+      "episodes": 5,
+      "total_steps": 500
+    },
+    {
+      "method": "unshielded",
+      "size": 10,
+      "episodes": 5,
+      "total_steps": 70
+    },
+    {
+      "method": "random_safe",
+      "size": 10,
+      "episodes": 5,
+      "total_steps": 794
+    },
+    {
+      "method": "value_based",
+      "size": 10,
+      "episodes": 5,
+      "total_steps": 1000
+    },
+    {
+      "method": "value_penalty",
+      "size": 10,
+      "episodes": 5,
+      "total_steps": 662
+    },
+    {
+      "method": "fixed_mix",
+      "size": 10,
+      "episodes": 5,
+      "total_steps": 718
+    },
+    {
+      "method": "adaptive",
+      "size": 10,
+      "episodes": 5,
+      "total_steps": 1000
+    }
+  ],
+  "checkpoint_reload_evaluations": {
+    "adaptive_seed42_ep50": {
+      "episodes": 10,
+      "success_rate": 0.0,
+      "collision_rate": 1.0,
+      "average_reward": -10.0,
+      "average_steps": 1.0,
+      "unsafe_proposal_rate": 1.0,
+      "intervention_rate": 0.0
+    },
+    "adaptive_seed42_ep100": {
+      "episodes": 10,
+      "success_rate": 0.0,
+      "collision_rate": 1.0,
+      "average_reward": -10.0,
+      "average_steps": 1.0,
+      "unsafe_proposal_rate": 1.0,
+      "intervention_rate": 0.0
+    },
+    "adaptive_seed42_ep150": {
+      "episodes": 10,
+      "success_rate": 0.0,
+      "collision_rate": 1.0,
+      "average_reward": -10.1,
+      "average_steps": 2.0,
+      "unsafe_proposal_rate": 0.5,
+      "intervention_rate": 0.0
+    },
+    "adaptive_seed42_ep200": {
+      "episodes": 10,
+      "success_rate": 0.0,
+      "collision_rate": 1.0,
+      "average_reward": -10.5,
+      "average_steps": 6.0,
+      "unsafe_proposal_rate": 0.16666666666666666,
+      "intervention_rate": 0.0
+    },
+    "adaptive_seed42_ep250": {
+      "episodes": 10,
+      "success_rate": 0.0,
+      "collision_rate": 1.0,
+      "average_reward": -10.5,
+      "average_steps": 6.0,
+      "unsafe_proposal_rate": 0.16666666666666666,
+      "intervention_rate": 0.0
+    },
+    "adaptive_seed42_ep300": {
+      "episodes": 10,
+      "success_rate": 0.0,
+      "collision_rate": 1.0,
+      "average_reward": -10.5,
+      "average_steps": 6.0,
+      "unsafe_proposal_rate": 0.16666666666666666,
+      "intervention_rate": 0.0
+    }
+  },
+  "final_matches_episode300": true,
+  "note": "Deterministic fixed-start evaluation; repeated episodes are not independent trials."
+}

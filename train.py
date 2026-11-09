@@ -14,14 +14,22 @@ from shield import choose_action
 
 METHODS = ('unshielded', 'random_safe', 'value_based', 'value_penalty', 'fixed_mix', 'adaptive')
 
-def train(method='random_safe', episodes=300, seed=42, output='results', size=6, window=100, penalty=1.0):
+def train(method='random_safe', episodes=300, seed=42, output='results', size=6, window=100, penalty=1.0,
+          env_config=None, threads=1):
     if method not in METHODS or episodes < 1:
         raise ValueError('Invalid method or episode count')
+    if threads < 1:
+        raise ValueError('threads must be positive')
+    torch.set_num_threads(threads)
+    settings = {'size': size}
+    if env_config is not None:
+        with open(env_config, encoding='utf-8') as f:
+            settings.update(json.load(f))
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     rng = random.Random(seed + 1)
-    env = GridWorld(size=size)
+    env = GridWorld(**settings)
     agent = DQNAgent(seed=seed)
     tracker = UnsafeRateTracker(window=window)
     rows = []
@@ -43,7 +51,7 @@ def train(method='random_safe', episodes=300, seed=42, output='results', size=6,
             tracker.record(unsafe)
             if strategy == 'random_safe':
                 selected_random += 1
-            elif strategy == 'value_based':
+            elif strategy in ('value_based', 'value_penalty'):
                 selected_value += 1
             next_obs, reward, terminated, truncated, info = env.step(executed)
             adjusted_reward = reward - penalty if method == 'value_penalty' and intervened else reward
@@ -82,8 +90,17 @@ def train(method='random_safe', episodes=300, seed=42, output='results', size=6,
         writer.writerows(rows)
     torch.save(agent.online.state_dict(), out / f'{prefix}.pt')
     with (out / f'{prefix}_summary.json').open('w') as f:
-        json.dump({'method': method, 'seed': seed, 'size': size, 'episodes': episodes,
-                   'window': window, 'penalty': penalty, **summarize(rows)}, f, indent=2)
+        json.dump({'method': method, 'seed': seed, 'size': env.size, 'episodes': episodes,
+                   'environment': {'size': env.size, 'start': env.start, 'goal': env.goal,
+                                   'obstacles': sorted(env.obstacles), 'max_steps': env.max_steps},
+                   'window': window, 'penalty': penalty, 'threads': threads,
+                   'torch_version': torch.__version__, 'numpy_version': np.__version__,
+                   'dqn': {'lr': 0.001, 'gamma': 0.99, 'batch_size': 64,
+                           'capacity': 10000, 'target_update_interval': 100,
+                           'epsilon_start': 1.0, 'epsilon_end': 0.05,
+                           'epsilon_decay_episodes': max(1, int(episodes * 0.8)),
+                           'replay_action': 'executed', 'checkpoint_interval': 50},
+                   **summarize(rows)}, f, indent=2)
     print(f'Trained {method} seed={seed}; saved to {out}/{prefix}.*')
     print(json.dumps(summarize(rows), indent=2))
     return rows
@@ -97,5 +114,7 @@ if __name__ == '__main__':
     p.add_argument('--size', type=int, default=6)
     p.add_argument('--window', type=int, default=100)
     p.add_argument('--penalty', type=float, default=1.0)
+    p.add_argument('--env-config', help='JSON GridWorld constructor settings; overrides --size')
+    p.add_argument('--threads', type=int, default=1)
     args = p.parse_args()
     train(**vars(args))

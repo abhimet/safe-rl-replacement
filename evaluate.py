@@ -8,13 +8,17 @@ from dqn import QNetwork
 from environment import GridWorld
 from metrics import summarize
 
-def evaluate(model, episodes=100, output='results/shield_off.csv', size=6):
+def evaluate(model, episodes=100, output='results/shield_off.csv', size=6, env_config=None):
     if episodes < 1:
         raise ValueError('episodes must be positive')
     network = QNetwork()
     network.load_state_dict(torch.load(model, map_location='cpu', weights_only=True))
     network.eval()
-    env = GridWorld(size=size)
+    settings = {'size': size}
+    if env_config is not None:
+        with open(env_config, encoding='utf-8') as f:
+            settings.update(json.load(f))
+    env = GridWorld(**settings)
     rows = []
     for episode in range(episodes):
         obs, _ = env.reset(seed=episode)
@@ -48,4 +52,5 @@ if __name__ == '__main__':
     p.add_argument('--episodes', type=int, default=100)
     p.add_argument('--output', default='results/shield_off.csv')
     p.add_argument('--size', type=int, default=6)
+    p.add_argument('--env-config', help='Same JSON environment settings used in training')
     evaluate(**vars(p.parse_args()))

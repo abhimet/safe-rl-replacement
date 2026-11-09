@@ -1,0 +1,6 @@
+episode,reward,steps,success,collision,unsafe_proposals,interventions,random_replacements,value_replacements,adaptive_rate
+1,-10.0,100,0,0,40,40,0,40,0.4
+2,-10.0,100,0,0,40,40,0,40,0.4
+3,2.3,78,1,0,34,34,0,34,0.42
+4,6.1,40,1,0,26,26,0,26,0.51
+5,-10.0,100,0,0,63,63,0,63,0.63

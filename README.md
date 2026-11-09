@@ -1,6 +1,6 @@
 # MSML635: Learning-Aware Action Replacement for Reducing Shield Dependence in RL
 
-**Team:** Abhiram Metuku (adaptive/evaluation/metrics/plots), Sai Malkireddy (environment/shield/tests), Sriram Vema (DQN/training). This is a working **starter implementation**, not validated experimental results or the team's final integration.
+**Team:** Abhiram Metuku (adaptive/evaluation/metrics/plots), Sai Malkireddy (environment/shield/tests), Sriram Vema (DQN/training). November 8 DQN/training validation is documented below; final comparative experiments and full environment integration remain pending.
 
 ## Setup
 
@@ -16,6 +16,28 @@ python -m pytest -q
 Gymnasium is optional in this starter because `environment.py` exposes a compatible reset/step API even when Gymnasium is not installed. To use actual Gymnasium `Env`/`spaces` classes, install `gymnasium>=0.29,<2`.
 
 ## Train and evaluate
+
+Sriram's November 8 implementation and validation are documented in
+[sriram_nov08.md](sriram_nov08.md). Reproduce the twelve baseline smoke runs,
+continuous 300-episode adaptive run, six checkpoint reload evaluations, and curve:
+
+```bash
+python validate_training.py --output results/nov08_sriram
+```
+
+Training and shield-off evaluation accept `--env-config` with a JSON object of
+GridWorld constructor settings (`size`, `obstacles`, `start`, `goal`, `max_steps`).
+JSON settings override `--size`. For initial 10x10 integration:
+
+```bash
+python train.py --method adaptive --episodes 300 --env-config configs/integration_10x10.json --output results/integration10
+python evaluate.py --model results/integration10/adaptive_seed42.pt --env-config configs/integration_10x10.json --output results/integration10/shield_off.csv
+```
+
+Each 50th episode saves a state dictionary named `<method>_seed<seed>_ep<N>.pt`.
+The final `<method>_seed<seed>.pt` uses the same loading format. Summaries record
+the resolved environment, seed, versions, DQN settings, and CPU thread count.
+The default single CPU thread avoids overhead for these small networks.
 
 ```bash
 python train.py --method unshielded --episodes 300 --seed 42
@@ -39,5 +61,7 @@ python plot_results.py --csv results/adaptive_seed42.csv
 - With executed-action replay, the original unsafe proposal is **not directly penalized** by a transition. A penalty on the executed transition may not directly discourage the original proposal. Treat this as an explicit limitation/hypothesis, not a proven solution.
 - The shield can only replace an unsafe action if at least one safe action exists. The no-safe-action case falls back to the original proposal.
 - No ADVICE implementation; it is literature comparison only.
-- `--size 6` and `--size 10` have default obstacle layouts (`default_6x6` and `rooms`). Other sizes have no default obstacles. The training and evaluation scripts cannot select the `zigzag` or `clutter` layouts yet.
-- Team members should merge their actual working code carefully; don't overwrite their changes with these starter versions.
+- `--size 6` uses the default 6×6 obstacle layout.
+- `--size 10` defaults to the `rooms` layout.
+- `configs/integration_10x10.json` provides a fixed obstacle configuration for preliminary training.
+- The `zigzag` and `clutter` layouts exist but are not yet selectable through the training/evaluation CLI.
