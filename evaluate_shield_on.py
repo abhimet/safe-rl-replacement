@@ -1,5 +1,3 @@
-
-"""Greedy evaluation using the adaptive safety shield."""
 import argparse
 import csv
 import json
@@ -12,18 +10,36 @@ from adaptive import UnsafeRateTracker
 from dqn import QNetwork
 from environment import GridWorld
 from metrics import summarize
-from shield import choose_action
+from shield import choose_action, METHODS
 
 
-def evaluate(model, episodes=100, output="results/shield_on.csv",
-             size=6, seed=10000, window=100):
+def evaluate(
+    model,
+    episodes=100,
+    output="results/shield_on.csv",
+    size=6,
+    seed=10000,
+    window=100,
+    method="adaptive",
+    env_config=None,
+):
+    if method == "unshielded" or method not in METHODS:
+        raise ValueError("Shield-on evaluation requires a shielded method")
+    if episodes < 1:
+        raise ValueError("episodes must be positive")
+
     network = QNetwork()
     network.load_state_dict(
         torch.load(model, map_location="cpu", weights_only=True)
     )
     network.eval()
 
-    env = GridWorld(size=size)
+    settings = {"size": size}
+    if env_config is not None:
+        with open(env_config, encoding="utf-8") as f:
+            settings.update(json.load(f))
+
+    env = GridWorld(**settings)
     rows = []
 
     for episode in range(episodes):
@@ -47,7 +63,7 @@ def evaluate(model, episodes=100, output="results/shield_on.csv",
             executed, intervened, _ = choose_action(
                 env,
                 proposed,
-                "adaptive",
+                method,
                 q_values=q,
                 rng=rng,
                 random_probability=tracker.rate,
@@ -97,4 +113,10 @@ if __name__ == "__main__":
     p.add_argument("--size", type=int, default=6)
     p.add_argument("--seed", type=int, default=10000)
     p.add_argument("--window", type=int, default=100)
+    p.add_argument(
+        "--method",
+        choices=[m for m in METHODS if m != "unshielded"],
+        default="adaptive",
+    )
+    p.add_argument("--env-config")
     evaluate(**vars(p.parse_args()))
