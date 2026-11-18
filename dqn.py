@@ -10,10 +10,10 @@ from torch import nn
 
 
 class QNetwork(nn.Module):
-    def __init__(self):
+    def __init__(self, input_dim=2):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(2, 64),
+            nn.Linear(input_dim, 64),
             nn.ReLU(),
             nn.Linear(64, 64),
             nn.ReLU(),
@@ -33,6 +33,7 @@ class DQNAgent:
         batch_size=64,
         capacity=10000,
         backup_mode="standard",
+        input_dim=2,
     ):
         if backup_mode not in ("standard", "shield_safe"):
             raise ValueError(
@@ -42,8 +43,8 @@ class DQNAgent:
         self.rng = random.Random(seed)
         torch.manual_seed(seed)
 
-        self.online = QNetwork()
-        self.target = QNetwork()
+        self.online = QNetwork(input_dim=input_dim)
+        self.target = QNetwork(input_dim=input_dim)
         self.target.load_state_dict(self.online.state_dict())
 
         self.optimizer = torch.optim.Adam(

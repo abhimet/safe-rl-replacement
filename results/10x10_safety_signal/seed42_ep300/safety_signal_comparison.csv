@@ -1,0 +1,7 @@
+mode,layout,successes,starts,success_pct,collision_pct,training_steps,credited_proposals,counterfactual_samples
+both,rooms,4,84,4.76,95.24,20523,7852,0
+both,zigzag,9,71,12.68,87.32,20523,7852,0
+executed,rooms,4,84,4.76,95.24,21864,0,0
+executed,zigzag,1,71,1.41,98.59,21864,0,0
+counterfactual,rooms,4,84,4.76,59.52,27593,0,5063
+counterfactual,zigzag,0,71,0.0,16.9,27593,0,5063

@@ -1,0 +1,14 @@
+{
+  "rooms": {
+    "starts": 84,
+    "successes": 4,
+    "collisions": 80,
+    "role": "train_layout"
+  },
+  "zigzag": {
+    "starts": 71,
+    "successes": 9,
+    "collisions": 62,
+    "role": "train_layout"
+  }
+}

@@ -80,7 +80,7 @@ def parse_layout(rows):
 class GridWorld(Base):
     ACTIONS = ((-1, 0), (0, 1), (1, 0), (0, -1))  # up right down left
 
-    def __init__(self, size=6, obstacles=None, start=None, goal=None, max_steps=100, layout=None, starts=None):
+    def __init__(self, size=6, obstacles=None, start=None, goal=None, max_steps=100, layout=None, starts=None, observation_mode="position"):
         super().__init__()
         if layout is not None and (obstacles is not None or goal is not None):
             raise ValueError('layout cannot be combined with obstacles or goal')
@@ -100,6 +100,9 @@ class GridWorld(Base):
             else:
                 name = None  # a replaced goal is no longer the named layout
 
+        if observation_mode not in ("position", "map"):
+            raise ValueError("observation_mode must be 'position' or 'map'")
+        self.observation_mode = observation_mode
         self.size = int(size)
         if self.size < 2:
             raise ValueError('size must be at least 2')
@@ -119,7 +122,10 @@ class GridWorld(Base):
 
         self.max_steps = int(max_steps)
         self.action_space = spaces.Discrete(4) if spaces else None
-        self.observation_space = spaces.Box(0.0, 1.0, shape=(2,), dtype=np.float32) if spaces else None
+        self.observation_space = (
+            spaces.Box(0.0, 1.0, shape=(self.observation_dim,), dtype=np.float32)
+            if spaces else None
+        )
         self._rng = np.random.default_rng()
         self.start = self.starts[0]
         self.position = self.start
@@ -132,8 +138,19 @@ class GridWorld(Base):
     def _inside(self, cell):
         return 0 <= cell[0] < self.size and 0 <= cell[1] < self.size
 
+    @property
+    def observation_dim(self):
+        return 2 if self.observation_mode == "position" else 4 + self.size * self.size
+
     def _observation(self):
-        return np.asarray(self.position, dtype=np.float32) / (self.size - 1)
+        location = np.asarray(self.position, dtype=np.float32) / (self.size - 1)
+        if self.observation_mode == "position":
+            return location
+        goal = np.asarray(self.goal, dtype=np.float32) / (self.size - 1)
+        obstacle_map = np.zeros((self.size, self.size), dtype=np.float32)
+        for row, col in self.obstacles:
+            obstacle_map[row, col] = 1.0
+        return np.concatenate((location, goal, obstacle_map.reshape(-1)))
 
     def distances_to_goal(self):
         """Shortest-path step count to the goal for every cell that can reach it."""

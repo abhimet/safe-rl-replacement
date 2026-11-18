@@ -18,22 +18,34 @@ def evaluate(
     env_config=None,
     all_starts=False,
     seed=10000,
+    layout=None,
+    observation_mode="position",
 ):
     if episodes < 1:
         raise ValueError("episodes must be positive")
 
-    network = QNetwork()
-    network.load_state_dict(
-        torch.load(model, map_location="cpu", weights_only=True)
-    )
+    # Load only weights; infer model dimension to give actionable mismatch errors.
+    weights = torch.load(model, map_location="cpu", weights_only=True)
+    input_dim = weights["net.0.weight"].shape[1]
+    network = QNetwork(input_dim=input_dim)
+    network.load_state_dict(weights)
     network.eval()
 
-    settings = {"size": size}
+    settings = {"size": size, "observation_mode": observation_mode}
+    if layout is not None:
+        if env_config is not None:
+            raise ValueError("Use --layout OR --env-config, not both")
+        settings["layout"] = layout
     if env_config is not None:
         with open(env_config, encoding="utf-8") as f:
             settings.update(json.load(f))
 
     env = GridWorld(**settings)
+    if env.observation_dim != input_dim:
+        raise ValueError(
+            f"Model expects {input_dim} features, but environment provides "
+            f"{env.observation_dim}. Check --observation-mode and --layout."
+        )
     rows = []
 
     starts = (
@@ -71,6 +83,8 @@ def evaluate(
 
         rows.append({
             "episode": episode + 1,
+            "layout": env.layout or "custom",
+            "start": str(start if start is not None else env.start),
             "reward": round(reward_sum, 4),
             "steps": env.steps,
             "success": int(info["success"]),
@@ -102,4 +116,6 @@ if __name__ == "__main__":
     p.add_argument("--env-config")
     p.add_argument("--seed", type=int, default=10000)
     p.add_argument("--all-starts", action="store_true")
+    p.add_argument("--layout", choices=("rooms", "zigzag", "clutter", "default_6x6"))
+    p.add_argument("--observation-mode", choices=("position", "map"), default="position")
     evaluate(**vars(p.parse_args()))

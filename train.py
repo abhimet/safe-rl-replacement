@@ -13,12 +13,36 @@ import torch
 
 from adaptive import UnsafeRateTracker
 from dqn import DQNAgent
-from environment import GridWorld
+from environment import GridWorld, LAYOUTS
 from metrics import summarize
 from shield import choose_action, METHODS
 
 
 PILOT_METHODS = tuple(dict.fromkeys((*METHODS, "worst_safe", "par")))
+
+
+def potential(distance_map, position, scale):
+    """Bounded negative shortest-path potential, using train-only map geometry.
+
+    The potential is zero at the goal and lies in [-scale, 0] elsewhere.
+    This is privileged *training reward information*, NOT a policy input.
+    """
+    farthest = max(distance_map.values())
+    if farthest < 1:
+        raise ValueError("Need at least one non-goal reachable state")
+    return -float(scale) * distance_map[tuple(position)] / farthest
+
+
+def shaping_bonus(distance_map, position, next_position, done, gamma, scale):
+    """F(s,a,s') = gamma*Phi(s') - Phi(s); terminal Phi is zero.
+
+    Using Phi(terminal)=0 covers success, collision, AND time-limit termination.
+    This ensures discounted shaping rewards telescope to -Phi(start) in a
+    finite episode, without changing the original discounted objective.
+    """
+    before = potential(distance_map, position, scale)
+    after = 0.0 if done else potential(distance_map, next_position, scale)
+    return gamma * after - before
 
 
 def train(
@@ -36,14 +60,20 @@ def train(
     storage_mode="executed",
     par_beta_min=-4.0,
     par_beta_max=4.0,
+    par_fixed_beta=None,
+    observation_mode="position",
+    train_layouts=None,
+    train_start_policy="marked",
+    reward_shaping="none",
+    shaping_scale=4.0,
 ):
     if method not in PILOT_METHODS or episodes < 1:
         raise ValueError("Invalid method or episode count")
 
-    if storage_mode not in ("executed", "both"):
+    if storage_mode not in ("executed", "both", "counterfactual"):
         raise ValueError("Invalid storage mode")
 
-    if method == "value_penalty" and storage_mode == "both":
+    if method == "value_penalty" and storage_mode != "executed":
         raise ValueError("Penalty baseline needs separate handling")
 
     if backup_mode == "shield_safe" and method == "unshielded":
@@ -52,8 +82,22 @@ def train(
     if threads < 1 or window < 1:
         raise ValueError("threads and window must be positive")
 
+    if train_start_policy not in ("marked", "all_reachable"):
+        raise ValueError("train_start_policy must be marked or all_reachable")
+
+    if reward_shaping not in ("none", "potential"):
+        raise ValueError("reward_shaping must be none or potential")
+    if not np.isfinite(shaping_scale) or shaping_scale <= 0:
+        raise ValueError("shaping_scale must be finite and positive")
+
     if par_beta_min >= par_beta_max:
         raise ValueError("par_beta_min must be smaller than par_beta_max")
+
+    if par_fixed_beta is not None:
+        if method != "par":
+            raise ValueError("--par-fixed-beta can only be used with --method par")
+        if not np.isfinite(par_fixed_beta):
+            raise ValueError("par_fixed_beta must be finite")
 
     torch.set_num_threads(threads)
     random.seed(seed)
@@ -62,18 +106,52 @@ def train(
 
     rng = random.Random(seed + 1)
 
-    settings = {"size": size}
+    if train_layouts and env_config:
+        raise ValueError("Use --train-layouts OR --env-config, not both")
+    if train_layouts:
+        if size != 10:
+            raise ValueError("Named training layouts currently require --size 10")
+        if observation_mode != "map":
+            raise ValueError("Multi-layout training requires --observation-mode map")
+        unknown = set(train_layouts) - set(LAYOUTS)
+        if unknown:
+            raise ValueError(f"Unknown train layouts: {sorted(unknown)}")
+        environments = [GridWorld(layout=name, observation_mode=observation_mode)
+                        for name in train_layouts]
+        settings = {"size": size, "observation_mode": observation_mode,
+                    "train_layouts": list(train_layouts)}
+    else:
+        settings = {"size": size, "observation_mode": observation_mode}
+        if env_config:
+            with open(env_config, encoding="utf-8") as f:
+                settings.update(json.load(f))
+        environments = [GridWorld(**settings)]
 
-    if env_config:
-        with open(env_config, encoding="utf-8") as f:
-            settings.update(json.load(f))
+    if len({e.observation_dim for e in environments}) != 1:
+        raise ValueError("Training layouts have incompatible observation dimensions")
 
-    env = GridWorld(**settings)
+    # Seeded, balanced start sampling avoids evaluating from states absent
+    # from the training-start distribution. Each layout shuffles its own pool.
+    start_pools = []
+    start_rngs = []
+    start_queues = []
+    for index, env in enumerate(environments):
+        pool = sorted(cell for cell in env.distances_to_goal() if cell != env.goal)
+        if not pool:
+            raise ValueError("Layout has no reachable non-goal starts")
+        start_pools.append(pool)
+        start_rngs.append(random.Random(seed + 101 + index))
+        start_queues.append([])
+
+    # Precompute shortest-path distances for training reward only. The 104
+    # model inputs remain unchanged; evaluation always uses original rewards.
+    distance_maps = [env.distances_to_goal() for env in environments]
 
     agent = DQNAgent(
         seed=seed,
         lr=lr,
         backup_mode=backup_mode,
+        input_dim=environments[0].observation_dim,
     )
 
     tracker = UnsafeRateTracker(window=window)
@@ -91,18 +169,52 @@ def train(
 
     if storage_mode == "both":
         prefix += "_both"
+    elif storage_mode == "counterfactual":
+        prefix += "_cf_collision"
+
+    if train_start_policy == "all_reachable":
+        prefix += "_allstarts"
+
+    if reward_shaping == "potential":
+        scale_label = f"{shaping_scale:g}".replace(".", "p")
+        prefix += f"_phi{scale_label}"
+
+    # Separate fixed-beta ablation files from regular adaptive PAR outputs.
+    if par_fixed_beta is not None:
+        beta_label = (
+            f"{par_fixed_beta:+g}"
+            .replace("+", "pos")
+            .replace("-", "neg")
+            .replace(".", "p")
+        )
+        prefix += f"_fixed_beta_{beta_label}"
 
     for episode in range(episodes):
-
-        obs, _ = env.reset(seed=seed + episode)
+        # Round-robin train-only layouts; no held-out environment is used.
+        env_index = episode % len(environments)
+        env = environments[env_index]
+        if train_start_policy == "all_reachable":
+            # Use each reachable start once per shuffled cycle per layout.
+            # pop() takes one entry and leaves the remainder for future episodes.
+            if not start_queues[env_index]:
+                start_queues[env_index] = start_pools[env_index].copy()
+                start_rngs[env_index].shuffle(start_queues[env_index])
+            selected_start = start_queues[env_index].pop()
+            obs, _ = env.reset(seed=seed + episode,
+                               options={"start": selected_start})
+        else:
+            obs, _ = env.reset(seed=seed + episode)
 
         reward_sum = 0.0
+        training_reward_sum = 0.0
+        truncated_last = False
         unsafe_count = 0
         intervention_count = 0
         random_count = 0
         value_count = 0
         worst_count = 0
         credited_count = 0
+        counterfactual_count = 0
         greedy_unsafe_count = 0
 
         q_gap_sum = 0.0
@@ -231,6 +343,10 @@ def train(
                         * improvement
                     )
 
+                # For ablations, use the fixed value instead of adaptive beta.
+                if par_fixed_beta is not None:
+                    beta = float(par_fixed_beta)
+
                 beta_values.append(beta)
 
                 if unsafe:
@@ -305,18 +421,27 @@ def train(
                 strategy == "worst_safe"
             )
 
-            # Execute selected action.
-            next_obs, reward, terminated, truncated, info = (
-                env.step(executed)
-            )
-
+            # Calculate the reward-shaping term from the actual transition.
+            # A rejected unsafe action is NOT executed in the real environment.
+            old_position = tuple(env.position)
+            next_obs, reward, terminated, truncated, info = env.step(executed)
             done = terminated or truncated
+            truncated_last = truncated
 
-            # Preserve original value_penalty baseline.
+            bonus = (
+                shaping_bonus(
+                    distance_maps[env_index], old_position, env.position,
+                    done, agent.gamma, shaping_scale,
+                )
+                if reward_shaping == "potential" else 0.0
+            )
+            base_training_reward = reward + bonus
+
+            # Keep the existing penalty baseline's additional loss signal.
             training_reward = (
-                reward - penalty
+                base_training_reward - penalty
                 if method == "value_penalty" and intervened
-                else reward
+                else base_training_reward
             )
 
             next_safe = (
@@ -342,7 +467,7 @@ def train(
                 agent.remember(
                     obs,
                     proposed,
-                    reward,
+                    base_training_reward,
                     next_obs,
                     done,
                     next_safe,
@@ -350,12 +475,32 @@ def train(
 
                 credited_count += 1
 
+            elif storage_mode == "counterfactual" and intervened:
+                # The deterministic GridWorld transition for the rejected
+                # unsafe proposal would have terminated with a collision.
+                # This is a *known counterfactual*, NOT an observed rollout.
+                # It supplies a negative target for the proposed action.
+                # For this known deterministic collision counterfactual,
+                # the terminal potential must also be zero; otherwise the
+                # replay targets mix incompatible reward definitions.
+                counterfactual_reward = -10.0
+                if reward_shaping == "potential":
+                    counterfactual_reward += shaping_bonus(
+                        distance_maps[env_index], old_position,
+                        old_position, True, agent.gamma, shaping_scale,
+                    )
+                agent.remember(
+                    obs, proposed, counterfactual_reward, obs, True, None,
+                )
+                counterfactual_count += 1
+
             # One learning update per environment step.
             agent.learn()
 
             unsafe_count += int(unsafe)
             intervention_count += int(intervened)
-            reward_sum += reward
+            reward_sum += reward  # Original task reward, comparable to baseline.
+            training_reward_sum += training_reward  # Diagnostic only.
 
             obs = next_obs
 
@@ -366,8 +511,12 @@ def train(
 
         rows.append({
             "episode": episode + 1,
+            "layout": env.layout or "custom",
+            "train_start": str(env.start),
             "reward": round(reward_sum, 4),
+            "training_reward": round(training_reward_sum, 4),
             "steps": steps,
+            "timeout": int(truncated_last),
             "success": int(info["success"]),
             "collision": int(info["collision"]),
             "unsafe_proposals": unsafe_count,
@@ -376,6 +525,7 @@ def train(
             "value_replacements": value_count,
             "worst_replacements": worst_count,
             "credited_proposals": credited_count,
+            "counterfactual_collision_samples": counterfactual_count,
 
             "adaptive_rate": round(tracker.rate, 4),
 
@@ -468,18 +618,29 @@ def train(
         "seed": seed,
         "episodes": episodes,
         "environment": settings,
+        "train_start_policy": train_start_policy,
+        "reward_shaping": reward_shaping,
+        "shaping_scale": shaping_scale if reward_shaping == "potential" else 0.0,
+        "discount_gamma": agent.gamma,
+        "timeout_rate": sum(int(row["timeout"]) for row in rows) / len(rows),
         "window": window,
         "penalty": penalty,
         "lr": lr,
         "backup_mode": backup_mode,
         "par_beta_min": par_beta_min,
         "par_beta_max": par_beta_max,
+        "par_fixed_beta": par_fixed_beta,
         "initial_greedy_unsafe_rate": initial_unsafe_rate,
         "target": "double_dqn",
+        "input_dim": environments[0].observation_dim,
         "torch_version": torch.__version__,
 
         "credited_proposals": sum(
             row["credited_proposals"]
+            for row in rows
+        ),
+        "counterfactual_collision_samples": sum(
+            row["counterfactual_collision_samples"]
             for row in rows
         ),
 
@@ -569,7 +730,7 @@ if __name__ == "__main__":
 
     p.add_argument(
         "--storage-mode",
-        choices=("executed", "both"),
+        choices=("executed", "both", "counterfactual"),
         default="executed",
     )
 
@@ -585,4 +746,24 @@ if __name__ == "__main__":
         default=4.0,
     )
 
-    train(**vars(p.parse_args()))
+    p.add_argument(
+        "--par-fixed-beta",
+        type=float,
+        default=None,
+    )
+
+    p.add_argument(
+        "--observation-mode", choices=("position", "map"),
+        default="position",
+    )
+    p.add_argument(
+        "--train-layouts", nargs="+", choices=tuple(LAYOUTS),
+        default=None,
+    )
+    p.add_argument("--train-start-policy", choices=("marked", "all_reachable"), default="marked")
+    p.add_argument("--reward-shaping", choices=("none", "potential"), default="none")
+    p.add_argument("--shaping-scale", type=float, default=4.0)
+
+    args = p.parse_args()
+    print(f"Starting PAR training: method={args.method}, storage={args.storage_mode}, episodes={args.episodes}", flush=True)
+    train(**vars(args))
