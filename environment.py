@@ -57,8 +57,37 @@ LAYOUTS = {
         '.#.##.#...',
         '...#.....G',
     ),
+    # Held-out layouts (never used for training). Goals differ from (9, 9)
+    # so generalization also tests reading the goal from map observations.
+    'spiral': (
+        'S.........',
+        '.########.',
+        '.#......#.',
+        '.#.####.#.',
+        '.#.#G.#.#.',
+        '.#.#..#.#.',
+        '.#.##.#.#.',
+        '.#....#.#.',
+        '.######.#.',
+        'S.......#S',
+    ),
+    'pillars': (
+        '.........G',
+        '.##..##.#.',
+        '.##..##.#.',
+        '..........',
+        '.#.##.#.##',
+        '.#.##.#...',
+        '..........',
+        '.##.#..##.',
+        '.##.#..##.',
+        'S...S....S',
+    ),
 }
 DEFAULT_LAYOUTS = {6: 'default_6x6', 10: 'rooms'}
+# Frozen train/held-out split; see layouts.md and evaluation_scenarios.json.
+TRAIN_LAYOUTS = ('rooms', 'zigzag')
+HELDOUT_LAYOUTS = ('clutter', 'spiral', 'pillars')
 
 
 def parse_layout(rows):

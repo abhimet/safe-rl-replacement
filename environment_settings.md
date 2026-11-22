@@ -9,7 +9,7 @@ Map legend: `#` obstacle, `S` candidate start, `G` goal, `.` free cell.
 | Setting | Value |
 |---|---|
 | Actions | `0` up, `1` right, `2` down, `3` left |
-| Observation | `(row, col) / (size - 1)`, shape `(2,)`, range 0–1 |
+| Observation | `position` mode (default): `(row, col) / (size - 1)`, shape `(2,)`. `map` mode: position, goal `(row, col) / (size - 1)`, then the flattened obstacle grid (1 = obstacle), shape `(4 + size²,)` = 104 on 10×10. All values 0–1 |
 | Step reward | -0.1 |
 | Goal reward | +10, episode terminates |
 | Collision reward | -10, episode terminates, position unchanged |
@@ -19,7 +19,7 @@ A collision is any move into a wall or obstacle.
 
 ## Layouts
 
-Each environment instance uses one layout for its whole lifetime. The observation does not encode the map, so layouts should not be switched between episodes without changing the observation.
+Each environment instance uses one layout for its whole lifetime. Position observations do not encode the map, so multi-layout training (`train.py --train-layouts`) requires `--observation-mode map`. The frozen train/held-out split (`rooms`, `zigzag` / `clutter`, `spiral`, `pillars`) is documented in `layouts.md`.
 
 "Shortest path" is the number of steps from that start to the goal. Every free cell in every layout can reach the goal.
 
