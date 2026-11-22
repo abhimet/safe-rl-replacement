@@ -91,9 +91,9 @@ def test_training_stores_executed_action_and_penalized_reward(tmp_path, monkeypa
         def act(self, observation, epsilon=0):
             return 0  # up is unsafe from the configured start
 
-        def remember(self, state, executed_action, reward, next_state, done):
+        def remember(self, state, executed_action, reward, next_state, done, next_safe_actions=None):
             transitions.append((executed_action, reward, done))
-            super().remember(state, executed_action, reward, next_state, done)
+            super().remember(state, executed_action, reward, next_state, done, next_safe_actions)
 
     monkeypatch.setattr(training, 'DQNAgent', InspectAgent)
     config = tmp_path / 'env.json'
@@ -103,6 +103,6 @@ def test_training_stores_executed_action_and_penalized_reward(tmp_path, monkeypa
     action, reward, done = transitions[0]
     assert action in (1, 2)
     assert reward == pytest.approx(-2.1)
-    assert done
+    assert not done  # time-limit truncation must bootstrap, not be terminal
     assert rows[0]['reward'] == pytest.approx(-0.1)
     assert rows[0]['unsafe_proposals'] == rows[0]['interventions'] == rows[0]['value_replacements'] == 1

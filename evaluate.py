@@ -5,7 +5,7 @@ from pathlib import Path
 
 import torch
 
-from dqn import QNetwork
+from dqn import network_from_weights
 from environment import LAYOUTS, GridWorld
 from metrics import summarize
 
@@ -30,12 +30,13 @@ def evaluate(
     if episodes < 1:
         raise ValueError("episodes must be positive")
 
-    # Load only weights; infer model dimension to give actionable mismatch errors.
+    # Small single-state networks are faster with one CPU thread.
+    torch.set_num_threads(1)
     weights = torch.load(model, map_location="cpu", weights_only=True)
-    input_dim = weights["net.0.weight"].shape[1]
-    network = QNetwork(input_dim=input_dim)
-    network.load_state_dict(weights)
-    network.eval()
+    network = network_from_weights(weights)
+    input_dim = getattr(network, "input_dim", None)
+    if input_dim is None:
+        input_dim = weights["net.0.weight"].shape[1]
 
     settings = {"size": size, "observation_mode": observation_mode}
     if layout is not None:
@@ -152,11 +153,13 @@ def load_scenarios(path, split=None):
 
 def evaluate_scenarios(model, scenarios, output="results/shield_off.csv", split=None):
     """Evaluate a checkpoint on the frozen scenario set (shield off, greedy)."""
+    torch.set_num_threads(1)
     weights = torch.load(model, map_location="cpu", weights_only=True)
-    input_dim = weights["net.0.weight"].shape[1]
-    network = QNetwork(input_dim=input_dim)
-    network.load_state_dict(weights)
+    network = network_from_weights(weights)
     network.eval()
+    input_dim = getattr(network, "input_dim", None)
+    if input_dim is None:
+      input_dim = weights["net.0.weight"].shape[1]
 
     spec, chosen = load_scenarios(scenarios, split)
     envs = {}

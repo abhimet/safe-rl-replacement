@@ -138,6 +138,8 @@ class GridWorld(Base):
         self.layout = name
         self.goal = tuple(goal) if goal is not None else (self.size - 1, self.size - 1)
         self.obstacles = set(map(tuple, obstacles)) if obstacles is not None else set()
+        if any(not self._inside(cell) for cell in self.obstacles):
+            raise ValueError("Obstacle coordinates must be within the grid")
         if not self._inside(self.goal) or self.goal in self.obstacles:
             raise ValueError(f'Invalid goal: {self.goal}')
         self._distances = self.distances_to_goal()
