@@ -12,6 +12,7 @@ import numpy as np
 import torch
 
 from adaptive import UnsafeRateTracker
+from fabr import CountAwareReplacement
 from dqn import DQNAgent
 from environment import GridWorld, LAYOUTS
 from metrics import summarize
@@ -48,6 +49,7 @@ def shaping_bonus(distance_map, position, next_position, done, gamma, scale):
 def train(
     method="adaptive",
     episodes=300,
+    max_env_steps=None,
     seed=42,
     output="results",
     size=6,
@@ -61,17 +63,38 @@ def train(
     par_beta_min=-4.0,
     par_beta_max=4.0,
     par_fixed_beta=None,
+    par_schedule="relative",
+    par_selector="boltzmann",
+    par_novelty_weight=2.0,
     observation_mode="position",
     train_layouts=None,
     train_start_policy="marked",
     reward_shaping="none",
     shaping_scale=4.0,
+    safety_loss_weight=0.0,
+    safety_margin=1.0,
+    architecture="mlp",
+    expert_pretrain_updates=0,
+    expert_loss_weight=0.0,
 ):
     if method not in PILOT_METHODS or episodes < 1:
         raise ValueError("Invalid method or episode count")
+    if max_env_steps is not None and max_env_steps < 1:
+        raise ValueError("max_env_steps must be a positive integer")
+
+    if safety_loss_weight > 0 and storage_mode != "executed":
+        raise ValueError("Safety-feedback loss requires executed-only replay")
+    if safety_loss_weight > 0 and method == "unshielded":
+        raise ValueError("Safety-feedback supervision requires a shielded method")
 
     if storage_mode not in ("executed", "both", "counterfactual"):
         raise ValueError("Invalid storage mode")
+    if storage_mode == "both":
+        raise ValueError(
+            "storage_mode=both fabricates an invalid transition: a rejected "
+            "action cannot be credited with the replacement's next state. "
+            "Use executed or deterministic counterfactual instead."
+        )
 
     if method == "value_penalty" and storage_mode != "executed":
         raise ValueError("Penalty baseline needs separate handling")
@@ -92,12 +115,33 @@ def train(
 
     if par_beta_min >= par_beta_max:
         raise ValueError("par_beta_min must be smaller than par_beta_max")
+    if par_schedule not in ("relative", "absolute"):
+        raise ValueError("par_schedule must be 'relative' or 'absolute'")
+    if par_selector not in ("boltzmann", "count_aware"):
+        raise ValueError("par_selector must be boltzmann or count_aware")
+    if par_selector != "boltzmann" and method != "par":
+        raise ValueError("Count-aware replacement requires method=par")
+    if not np.isfinite(par_novelty_weight) or par_novelty_weight < 0:
+        raise ValueError("par_novelty_weight must be finite and nonnegative")
 
     if par_fixed_beta is not None:
         if method != "par":
             raise ValueError("--par-fixed-beta can only be used with --method par")
         if not np.isfinite(par_fixed_beta):
             raise ValueError("par_fixed_beta must be finite")
+
+    if architecture not in ("mlp", "spatial"):
+        raise ValueError("Invalid architecture")
+    if expert_pretrain_updates < 0 or not isinstance(expert_pretrain_updates, int):
+        raise ValueError("expert_pretrain_updates must be a nonnegative integer")
+    if not np.isfinite(expert_loss_weight) or expert_loss_weight < 0:
+        raise ValueError("expert_loss_weight must be finite and nonnegative")
+    if (expert_pretrain_updates or expert_loss_weight) and observation_mode != "map":
+        raise ValueError("Planner teacher requires --observation-mode map")
+    if expert_loss_weight and not expert_pretrain_updates:
+        raise ValueError("Use expert pretraining before auxiliary model guidance")
+    if (expert_pretrain_updates or expert_loss_weight) and method == "value_penalty":
+        raise ValueError("Planner targets are incompatible with intervention-penalized objective")
 
     torch.set_num_threads(threads)
     random.seed(seed)
@@ -152,9 +196,24 @@ def train(
         lr=lr,
         backup_mode=backup_mode,
         input_dim=environments[0].observation_dim,
+        safety_loss_weight=safety_loss_weight,
+        safety_margin=safety_margin,
+        architecture=architecture,
+        expert_loss_weight=expert_loss_weight,
     )
 
+    expert_training_loss = None
+    if expert_pretrain_updates or expert_loss_weight:
+        from planner_teacher import training_teacher
+        teacher_obs, teacher_q = training_teacher(
+            environments, gamma=agent.gamma, shaping_scale=shaping_scale,
+            reward_shaping=reward_shaping,
+        )
+        agent.set_expert_dataset(teacher_obs, teacher_q)
+        expert_training_loss = agent.pretrain_expert(expert_pretrain_updates)
+
     tracker = UnsafeRateTracker(window=window)
+    count_aware = CountAwareReplacement(rng, novelty_weight=par_novelty_weight) if par_selector == "count_aware" else None
 
     # PAR tracks greedy unsafe actions separately from
     # epsilon-random exploration.
@@ -162,11 +221,21 @@ def train(
     initial_unsafe_rate = None
 
     rows = []
+    total_env_steps = 0
     out = Path(output)
     out.mkdir(parents=True, exist_ok=True)
 
     prefix = f"{method}_seed{seed}"
+    if max_env_steps is not None:
+        prefix += f"_steps{max_env_steps}"
 
+    if architecture == "spatial":
+        prefix += "_spatial"
+    if expert_pretrain_updates:
+        prefix += f"_teacher{expert_pretrain_updates}"
+    if expert_loss_weight:
+        label = f"{expert_loss_weight:g}".replace(".", "p")
+        prefix += f"_expertw{label}"
     if storage_mode == "both":
         prefix += "_both"
     elif storage_mode == "counterfactual":
@@ -179,6 +248,15 @@ def train(
         scale_label = f"{shaping_scale:g}".replace(".", "p")
         prefix += f"_phi{scale_label}"
 
+    if method == "par" and par_schedule == "absolute":
+        prefix += "_absolute"
+    if method == "par" and count_aware is not None:
+        prefix += "_countaware_novelty" + f"{par_novelty_weight:g}".replace(".", "p")
+
+    if safety_loss_weight > 0:
+        weight_label = f"{safety_loss_weight:g}".replace(".", "p")
+        prefix += f"_safetyw{weight_label}"
+
     # Separate fixed-beta ablation files from regular adaptive PAR outputs.
     if par_fixed_beta is not None:
         beta_label = (
@@ -189,7 +267,10 @@ def train(
         )
         prefix += f"_fixed_beta_{beta_label}"
 
-    for episode in range(episodes):
+    # With a step budget, allow enough episodes to use it even when
+    # policies collide quickly (each episode contains at least one step).
+    episode_limit = episodes if max_env_steps is None else max_env_steps
+    for episode in range(episode_limit):
         # Round-robin train-only layouts; no held-out environment is used.
         env_index = episode % len(environments)
         env = environments[env_index]
@@ -222,6 +303,8 @@ def train(
         positive_q_gap_count = 0
 
         beta_values = []
+        count_aware_replacements = 0
+        count_aware_different_from_best_q = 0
 
         info = {
             "success": False,
@@ -230,11 +313,13 @@ def train(
 
         for _ in range(env.max_steps):
 
-            epsilon = max(
-                0.05,
-                1.0 - 0.95 * episode
-                / max(1, int(episodes * 0.8)),
-            )
+            # Equal-step runs need the same epsilon at the same total
+            # environment interaction count, regardless of episode length.
+            if max_env_steps is None:
+                progress = episode / max(1, int(episodes * 0.8))
+            else:
+                progress = total_env_steps / max(1, int(max_env_steps * 0.8))
+            epsilon = max(0.05, 1.0 - 0.95 * progress)
 
             proposed = agent.act(obs, epsilon)
 
@@ -315,32 +400,33 @@ def train(
                     np.mean(greedy_history)
                 )
 
-                # Begin pessimistically, then move toward
-                # value-based replacement as greedy
-                # unsafe preferences decrease.
-                if initial_unsafe_rate is None:
+                # Original relative schedule is retained for reproducibility.
+                # The revised absolute schedule removes the unstable 100-step
+                # initial calibration. For beta_min=0, beta_max=4, it chooses
+                # nearly random safe replacements while greedy unsafe rate is
+                # high, then increasingly prefers high-Q safe alternatives.
+                if par_schedule == "absolute":
+                    progress_toward_value = (1.0 - current_rate) ** 2
+                    beta = (
+                        par_beta_min
+                        + (par_beta_max - par_beta_min)
+                        * progress_toward_value
+                    )
+                elif initial_unsafe_rate is None:
                     beta = par_beta_min
-
                 elif initial_unsafe_rate == 0.0:
                     beta = (
                         par_beta_max
                         if current_rate == 0.0
                         else par_beta_min
                     )
-
                 else:
-                    improvement = (
-                        1.0
-                        - min(
-                            current_rate / initial_unsafe_rate,
-                            1.0,
-                        )
+                    improvement = 1.0 - min(
+                        current_rate / initial_unsafe_rate, 1.0
                     )
-
                     beta = (
                         par_beta_min
-                        + (par_beta_max - par_beta_min)
-                        * improvement
+                        + (par_beta_max - par_beta_min) * improvement
                     )
 
                 # For ablations, use the fixed value instead of adaptive beta.
@@ -361,27 +447,29 @@ def train(
                         dtype=np.float64,
                     )
 
-                    # Normalize Q-values across safe actions.
-                    std = float(safe_q.std())
-
-                    if std < 1e-6:
-                        normalized = np.zeros_like(safe_q)
-                    else:
-                        normalized = (
-                            (safe_q - safe_q.mean()) / std
+                    if count_aware is not None:
+                        state_key = (env_index, tuple(env.position))
+                        executed = count_aware.select(
+                            state_key, safe, q, beta=beta,
+                            unsafe_rate=current_rate,
                         )
-
-                    # Boltzmann replacement distribution.
-                    logits = beta * normalized
-                    logits -= logits.max()
-
-                    weights = np.exp(logits)
-
-                    executed = rng.choices(
-                        safe,
-                        weights=weights.tolist(),
-                        k=1,
-                    )[0]
+                        count_aware_replacements += 1
+                        count_aware_different_from_best_q += int(
+                            executed != max(safe, key=lambda a: float(q[a]))
+                        )
+                    else:
+                        # Historical FABR, left untouched for fair ablations.
+                        std = float(safe_q.std())
+                        if std < 1e-6:
+                            normalized = np.zeros_like(safe_q)
+                        else:
+                            normalized = (safe_q - safe_q.mean()) / std
+                        logits = beta * normalized
+                        logits -= logits.max()
+                        weights = np.exp(logits)
+                        executed = rng.choices(
+                            safe, weights=weights.tolist(), k=1,
+                        )[0]
 
                     intervened = True
                     strategy = "par"
@@ -408,6 +496,8 @@ def train(
                 )
 
             tracker.record(unsafe)
+            if count_aware is not None:
+                count_aware.observe((env_index, tuple(env.position)), executed)
 
             random_count += int(
                 strategy == "random_safe"
@@ -425,13 +515,17 @@ def train(
             # A rejected unsafe action is NOT executed in the real environment.
             old_position = tuple(env.position)
             next_obs, reward, terminated, truncated, info = env.step(executed)
-            done = terminated or truncated
+            total_env_steps += 1
+            episode_done = terminated or truncated
+            # Truncation is the external episode time limit, not a terminal
+            # MDP transition. Bootstrap from its final state during learning.
+            learning_terminal = terminated
             truncated_last = truncated
 
             bonus = (
                 shaping_bonus(
                     distance_maps[env_index], old_position, env.position,
-                    done, agent.gamma, shaping_scale,
+                    learning_terminal, agent.gamma, shaping_scale,
                 )
                 if reward_shaping == "potential" else 0.0
             )
@@ -446,19 +540,22 @@ def train(
 
             next_safe = (
                 env.safe_actions()
-                if backup_mode == "shield_safe" and not done
+                if backup_mode == "shield_safe" and not learning_terminal
                 else None
             )
 
             # Real executed transition.
-            agent.remember(
-                obs,
-                executed,
-                training_reward,
-                next_obs,
-                done,
-                next_safe,
-            )
+            if safety_loss_weight > 0:
+                agent.remember(
+                    obs, executed, training_reward, next_obs, learning_terminal,
+                    next_safe, current_safe_actions=safe,
+                )
+            else:
+                # Preserve the pre-existing interface for unmodified runs.
+                agent.remember(
+                    obs, executed, training_reward, next_obs, learning_terminal,
+                    next_safe,
+                )
 
             # Optional shield-mediated action relabeling.
             # This is NOT the true unshielded transition.
@@ -469,7 +566,7 @@ def train(
                     proposed,
                     base_training_reward,
                     next_obs,
-                    done,
+                    learning_terminal,
                     next_safe,
                 )
 
@@ -504,13 +601,15 @@ def train(
 
             obs = next_obs
 
-            if done:
+            if episode_done or (max_env_steps is not None and total_env_steps >= max_env_steps):
                 break
 
         steps = env.steps
+        budget_cut = max_env_steps is not None and total_env_steps >= max_env_steps and not episode_done
 
         rows.append({
             "episode": episode + 1,
+            "budget_cut": int(budget_cut),
             "layout": env.layout or "custom",
             "train_start": str(env.start),
             "reward": round(reward_sum, 4),
@@ -524,6 +623,8 @@ def train(
             "random_replacements": random_count,
             "value_replacements": value_count,
             "worst_replacements": worst_count,
+            "count_aware_replacements": count_aware_replacements,
+            "count_aware_different_from_best_q": count_aware_different_from_best_q,
             "credited_proposals": credited_count,
             "counterfactual_collision_samples": counterfactual_count,
 
@@ -571,10 +672,16 @@ def train(
             "loss_last_batch": round(
                 agent.last_stats.get("loss", 0.0), 6
             ),
+            "expert_loss_last_batch": round(
+                agent.last_stats.get("expert_loss", 0.0), 6
+            ),
+            "safety_loss_last_batch": round(
+                agent.last_stats.get("safety_loss", 0.0), 6
+            ),
         })
 
         # Save checkpoints every 50 episodes.
-        if (episode + 1) % 50 == 0:
+        if max_env_steps is None and (episode + 1) % 50 == 0:
 
             path = (
                 out / f"{prefix}_ep{episode+1}.pt"
@@ -591,6 +698,9 @@ def train(
                 f"target={rows[-1]['target_max_batch']:.2f}; "
                 f"beta={rows[-1]['par_beta']}"
             )
+
+        if max_env_steps is not None and total_env_steps >= max_env_steps:
+            break
 
     # Save episode metrics.
     with (out / f"{prefix}.csv").open(
@@ -611,25 +721,58 @@ def train(
         out / f"{prefix}.pt",
     )
 
+    # A step budget can stop partway through one episode. Retain its
+    # transitions for learning, but do not count it as a failed episode.
+    completed_rows = [row for row in rows if not row["budget_cut"]]
+    if completed_rows:
+        episode_metrics = summarize(completed_rows)
+    else:
+        episode_metrics = {
+            "episodes": 0,
+            "success_rate": None,
+            "collision_rate": None,
+            "average_reward": None,
+            "average_steps": None,
+            "unsafe_proposal_rate": None,
+            "intervention_rate": None,
+        }
+
     # Save summary.
     summary = {
         "method": method,
         "storage_mode": storage_mode,
         "seed": seed,
-        "episodes": episodes,
+        "episodes_requested": episodes if max_env_steps is None else None,
+        "max_env_steps": max_env_steps,
+        "environment_steps": total_env_steps,
+        "completed_episodes": sum(1 - row["budget_cut"] for row in rows),
         "environment": settings,
         "train_start_policy": train_start_policy,
         "reward_shaping": reward_shaping,
         "shaping_scale": shaping_scale if reward_shaping == "potential" else 0.0,
         "discount_gamma": agent.gamma,
-        "timeout_rate": sum(int(row["timeout"]) for row in rows) / len(rows),
+        "timeout_rate": (
+            sum(int(row["timeout"]) for row in completed_rows) / len(completed_rows)
+            if completed_rows else None
+        ),
         "window": window,
         "penalty": penalty,
         "lr": lr,
         "backup_mode": backup_mode,
+        "safety_loss_weight": safety_loss_weight,
+        "safety_margin": safety_margin,
+        "architecture": architecture,
+        "expert_pretrain_updates": expert_pretrain_updates,
+        "expert_loss_weight": expert_loss_weight,
+        "expert_training_loss": expert_training_loss,
         "par_beta_min": par_beta_min,
         "par_beta_max": par_beta_max,
         "par_fixed_beta": par_fixed_beta,
+        "par_schedule": par_schedule,
+        "par_selector": par_selector,
+        "par_novelty_weight": par_novelty_weight,
+        "count_aware_replacements": sum(row["count_aware_replacements"] for row in rows),
+        "count_aware_different_from_best_q": sum(row["count_aware_different_from_best_q"] for row in rows),
         "initial_greedy_unsafe_rate": initial_unsafe_rate,
         "target": "double_dqn",
         "input_dim": environments[0].observation_dim,
@@ -644,7 +787,7 @@ def train(
             for row in rows
         ),
 
-        **summarize(rows),
+        **episode_metrics,
     }
 
     with (
@@ -677,6 +820,12 @@ if __name__ == "__main__":
         "--episodes",
         type=int,
         default=300,
+    )
+    p.add_argument(
+        "--max-env-steps",
+        type=int,
+        default=None,
+        help="Train for exactly N environment steps (overrides episode stopping)",
     )
 
     p.add_argument(
@@ -735,6 +884,15 @@ if __name__ == "__main__":
     )
 
     p.add_argument(
+        "--safety-loss-weight", type=float, default=0.0,
+        help="Auxiliary train-only loss: unsafe Q below best safe Q",
+    )
+    p.add_argument(
+        "--safety-margin", type=float, default=1.0,
+        help="Required Q-value separation for train-only safety feedback",
+    )
+
+    p.add_argument(
         "--par-beta-min",
         type=float,
         default=-4.0,
@@ -746,6 +904,12 @@ if __name__ == "__main__":
         default=4.0,
     )
 
+    p.add_argument(
+        "--par-schedule", choices=("relative", "absolute"),
+        default="relative", help="Original reference-ratio or robust absolute FABR schedule",
+    )
+    p.add_argument("--par-selector", choices=("boltzmann", "count_aware"), default="boltzmann")
+    p.add_argument("--par-novelty-weight", type=float, default=2.0)
     p.add_argument(
         "--par-fixed-beta",
         type=float,
@@ -763,7 +927,12 @@ if __name__ == "__main__":
     p.add_argument("--train-start-policy", choices=("marked", "all_reachable"), default="marked")
     p.add_argument("--reward-shaping", choices=("none", "potential"), default="none")
     p.add_argument("--shaping-scale", type=float, default=4.0)
+    p.add_argument("--architecture", choices=("mlp", "spatial"), default="mlp")
+    p.add_argument("--expert-pretrain-updates", type=int, default=0)
+    p.add_argument("--expert-loss-weight", type=float, default=0.0)
 
     args = p.parse_args()
-    print(f"Starting PAR training: method={args.method}, storage={args.storage_mode}, episodes={args.episodes}", flush=True)
+    budget_desc = (f"steps={args.max_env_steps}" if args.max_env_steps is not None
+                   else f"episodes={args.episodes}")
+    print(f"Starting PAR training: method={args.method}, storage={args.storage_mode}, {budget_desc}", flush=True)
     train(**vars(args))
