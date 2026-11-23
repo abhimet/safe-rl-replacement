@@ -1,4 +1,4 @@
-# Sriram: November 8 deliverables
+# November 8 training deliverables
 
 ## Implementation
 
@@ -38,7 +38,7 @@ environment, then run:
 
 ```powershell
 python -m pytest -q
-python validate_training.py --output results/nov08_sriram
+python validate_training.py --output results/nov08_training
 ```
 
 The local verification environment is `.venv` with system packages inherited;

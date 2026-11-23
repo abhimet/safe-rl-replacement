@@ -1,0 +1,15 @@
+﻿Slide 1 — Double DQN training
+• Normalized row and column → 64 ReLU → 64 ReLU → four action values.
+• Online network selects the next action. Target network supplies its value.
+• Uniform replay, batches of 64, Adam, and target synchronization every 100 updates.
+
+Slide 2 — Baselines and replay
+• Unshielded executes proposals. Random-safe samples the safe set. Highest-Q maximizes Q over the safe set.
+• The fixed-penalty variant adjusts replay reward on intervention. The original adaptive mixture uses recent unsafe proposal frequency to choose random-safe versus highest-Q.
+• Replay stores the executed action. Logs record unsafe proposals and interventions separately.
+
+Slide 3 — Experimental controls
+• Shared learner, map settings, reward rules, and exploration across baselines.
+• Record environmental steps and optimizer updates alongside episode budget.
+• Greedy shield-off evaluation measures success and collision on shared scenarios.
+• Report variability across independent training seeds.

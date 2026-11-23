@@ -1,0 +1,4 @@
+method,training_seed,status,scenario_set,training_episodes,training_steps,optimizer_updates,checkpoint,evaluation_csv,episodes,success_rate,collision_rate,average_reward,average_steps,unsafe_proposal_rate,intervention_rate
+unshielded,42,provisional_complete,provisional_rooms_all_named_starts,300,6868,6805,results/ddqn_provisional/unshielded_seed42.pt,results/ddqn_provisional/unshielded_seed42_all_starts_shield_off.csv,3,0.0,0.0,-10.0,100.0,0.0,0.0
+random_safe,42,provisional_complete,provisional_rooms_all_named_starts,300,26466,26403,results/ddqn_provisional/random_safe_seed42.pt,results/ddqn_provisional/random_safe_seed42_all_starts_shield_off.csv,3,0.0,1.0,-10.3,4.0,0.25,0.0
+value_penalty,42,provisional_complete,provisional_rooms_all_named_starts,300,22709,22646,results/ddqn_provisional/value_penalty_seed42.pt,results/ddqn_provisional/value_penalty_seed42_all_starts_shield_off.csv,3,0.0,0.3333333333333333,-10.0,67.0,0.004975124378109453,0.0
