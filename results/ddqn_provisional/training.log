@@ -1,0 +1,78 @@
+Saved checkpoint: results\ddqn_provisional\unshielded_seed42_ep50.pt
+Saved checkpoint: results\ddqn_provisional\unshielded_seed42_ep100.pt
+Saved checkpoint: results\ddqn_provisional\unshielded_seed42_ep150.pt
+Saved checkpoint: results\ddqn_provisional\unshielded_seed42_ep200.pt
+Saved checkpoint: results\ddqn_provisional\unshielded_seed42_ep250.pt
+Saved checkpoint: results\ddqn_provisional\unshielded_seed42_ep300.pt
+Trained unshielded seed=42; saved to results\ddqn_provisional/unshielded_seed42.*
+{
+  "episodes": 300,
+  "success_rate": 0.0,
+  "collision_rate": 0.8933333333333333,
+  "average_reward": -11.133333333333333,
+  "average_steps": 22.893333333333334,
+  "unsafe_proposal_rate": 0.039021549213744906,
+  "intervention_rate": 0.0
+}
+{
+  "episodes": 3,
+  "success_rate": 0.0,
+  "collision_rate": 0.0,
+  "average_reward": -10.0,
+  "average_steps": 100.0,
+  "unsafe_proposal_rate": 0.0,
+  "intervention_rate": 0.0
+}
+Shield OFF results saved to results\ddqn_provisional\unshielded_seed42_shield_off.csv
+Saved checkpoint: results\ddqn_provisional\random_safe_seed42_ep50.pt
+Saved checkpoint: results\ddqn_provisional\random_safe_seed42_ep100.pt
+Saved checkpoint: results\ddqn_provisional\random_safe_seed42_ep150.pt
+Saved checkpoint: results\ddqn_provisional\random_safe_seed42_ep200.pt
+Saved checkpoint: results\ddqn_provisional\random_safe_seed42_ep250.pt
+Saved checkpoint: results\ddqn_provisional\random_safe_seed42_ep300.pt
+Trained random_safe seed=42; saved to results\ddqn_provisional/random_safe_seed42.*
+{
+  "episodes": 300,
+  "success_rate": 0.25333333333333335,
+  "collision_rate": 0.0,
+  "average_reward": -6.263333333333334,
+  "average_steps": 88.22,
+  "unsafe_proposal_rate": 0.40580367263659034,
+  "intervention_rate": 0.40580367263659034
+}
+{
+  "episodes": 3,
+  "success_rate": 0.0,
+  "collision_rate": 1.0,
+  "average_reward": -10.3,
+  "average_steps": 4.0,
+  "unsafe_proposal_rate": 0.25,
+  "intervention_rate": 0.0
+}
+Shield OFF results saved to results\ddqn_provisional\random_safe_seed42_shield_off.csv
+Saved checkpoint: results\ddqn_provisional\value_penalty_seed42_ep50.pt
+Saved checkpoint: results\ddqn_provisional\value_penalty_seed42_ep100.pt
+Saved checkpoint: results\ddqn_provisional\value_penalty_seed42_ep150.pt
+Saved checkpoint: results\ddqn_provisional\value_penalty_seed42_ep200.pt
+Saved checkpoint: results\ddqn_provisional\value_penalty_seed42_ep250.pt
+Saved checkpoint: results\ddqn_provisional\value_penalty_seed42_ep300.pt
+Trained value_penalty seed=42; saved to results\ddqn_provisional/value_penalty_seed42.*
+{
+  "episodes": 300,
+  "success_rate": 0.4266666666666667,
+  "collision_rate": 0.0,
+  "average_reward": -3.2603333333333335,
+  "average_steps": 75.69666666666667,
+  "unsafe_proposal_rate": 0.19283103615306707,
+  "intervention_rate": 0.19283103615306707
+}
+{
+  "episodes": 3,
+  "success_rate": 0.0,
+  "collision_rate": 0.3333333333333333,
+  "average_reward": -10.0,
+  "average_steps": 67.0,
+  "unsafe_proposal_rate": 0.004975124378109453,
+  "intervention_rate": 0.0
+}
+Shield OFF results saved to results\ddqn_provisional\value_penalty_seed42_shield_off.csv

@@ -36,6 +36,7 @@ def train(method='random_safe', episodes=300, seed=42, output='results', size=6,
     out = Path(output)
     out.mkdir(parents=True, exist_ok=True)
 
+    total_steps = 0
     for episode in range(episodes):
         obs, _ = env.reset(seed=seed + episode)
         total_reward = 0.0
@@ -57,6 +58,7 @@ def train(method='random_safe', episodes=300, seed=42, output='results', size=6,
             adjusted_reward = reward - penalty if method == 'value_penalty' and intervened else reward
             agent.remember(obs, executed, adjusted_reward, next_obs, terminated or truncated)
             agent.learn()
+            total_steps += 1
             unsafe_count += int(unsafe)
             intervention_count += int(intervened)
             total_reward += reward  # report environment reward, not modified training reward
@@ -92,10 +94,12 @@ def train(method='random_safe', episodes=300, seed=42, output='results', size=6,
     with (out / f'{prefix}_summary.json').open('w') as f:
         json.dump({'method': method, 'seed': seed, 'size': env.size, 'episodes': episodes,
                    'environment': {'size': env.size, 'start': env.start, 'goal': env.goal,
+                                   'layout': env.layout, 'starts': env.starts,
                                    'obstacles': sorted(env.obstacles), 'max_steps': env.max_steps},
                    'window': window, 'penalty': penalty, 'threads': threads,
+                   'training_steps': total_steps, 'optimizer_updates': agent.updates,
                    'torch_version': torch.__version__, 'numpy_version': np.__version__,
-                   'dqn': {'lr': 0.001, 'gamma': 0.99, 'batch_size': 64,
+                   'dqn': {'algorithm': 'double_dqn', 'lr': 0.001, 'gamma': 0.99, 'batch_size': 64,
                            'capacity': 10000, 'target_update_interval': 100,
                            'epsilon_start': 1.0, 'epsilon_end': 0.05,
                            'epsilon_decay_episodes': max(1, int(episodes * 0.8)),

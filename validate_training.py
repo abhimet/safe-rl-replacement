@@ -1,4 +1,4 @@
-"""Reproduce Sriram's November 8 training artifacts from one command."""
+"""Reproduce the November 8 training artifacts from one command."""
 import argparse
 import json
 from pathlib import Path
@@ -10,7 +10,7 @@ from plot_results import plot
 from train import METHODS, train
 
 
-def validate(output='results/nov08_sriram'):
+def validate(output='results/nov08_training'):
     root = Path(output)
     config = Path(__file__).parent / 'configs' / 'integration_10x10.json'
     smoke = []
@@ -40,5 +40,5 @@ def validate(output='results/nov08_sriram'):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', default='results/nov08_sriram')
+    parser.add_argument('--output', default='results/nov08_training')
     validate(**vars(parser.parse_args()))

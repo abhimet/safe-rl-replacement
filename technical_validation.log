@@ -1,0 +1,198 @@
+Trained unshielded seed=42; saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\smoke\6x6/unshielded_seed42.*
+{
+  "episodes": 5,
+  "success_rate": 0.0,
+  "collision_rate": 1.0,
+  "average_reward": -11.24,
+  "average_steps": 13.4,
+  "unsafe_proposal_rate": 0.07462686567164178,
+  "intervention_rate": 0.0
+}
+Trained random_safe seed=42; saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\smoke\6x6/random_safe_seed42.*
+{
+  "episodes": 5,
+  "success_rate": 0.4,
+  "collision_rate": 0.0,
+  "average_reward": -3.9200000000000004,
+  "average_steps": 79.6,
+  "unsafe_proposal_rate": 0.40703517587939697,
+  "intervention_rate": 0.40703517587939697
+}
+Trained value_based seed=42; saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\smoke\6x6/value_based_seed42.*
+{
+  "episodes": 5,
+  "success_rate": 0.0,
+  "collision_rate": 0.0,
+  "average_reward": -10.0,
+  "average_steps": 100.0,
+  "unsafe_proposal_rate": 0.324,
+  "intervention_rate": 0.324
+}
+Trained value_penalty seed=42; saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\smoke\6x6/value_penalty_seed42.*
+{
+  "episodes": 5,
+  "success_rate": 0.4,
+  "collision_rate": 0.0,
+  "average_reward": -4.2,
+  "average_steps": 82.4,
+  "unsafe_proposal_rate": 0.5218446601941747,
+  "intervention_rate": 0.5218446601941747
+}
+Trained fixed_mix seed=42; saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\smoke\6x6/fixed_mix_seed42.*
+{
+  "episodes": 5,
+  "success_rate": 0.2,
+  "collision_rate": 0.0,
+  "average_reward": -7.26,
+  "average_steps": 92.8,
+  "unsafe_proposal_rate": 0.34051724137931033,
+  "intervention_rate": 0.34051724137931033
+}
+Trained adaptive seed=42; saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\smoke\6x6/adaptive_seed42.*
+{
+  "episodes": 5,
+  "success_rate": 0.8,
+  "collision_rate": 0.0,
+  "average_reward": 2.88,
+  "average_steps": 52.0,
+  "unsafe_proposal_rate": 0.38846153846153847,
+  "intervention_rate": 0.38846153846153847
+}
+Trained unshielded seed=42; saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\smoke\10x10/unshielded_seed42.*
+{
+  "episodes": 5,
+  "success_rate": 0.0,
+  "collision_rate": 1.0,
+  "average_reward": -11.3,
+  "average_steps": 14.0,
+  "unsafe_proposal_rate": 0.07142857142857142,
+  "intervention_rate": 0.0
+}
+Trained random_safe seed=42; saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\smoke\10x10/random_safe_seed42.*
+{
+  "episodes": 5,
+  "success_rate": 0.2,
+  "collision_rate": 0.0,
+  "average_reward": -16.9,
+  "average_steps": 189.2,
+  "unsafe_proposal_rate": 0.21458773784355178,
+  "intervention_rate": 0.21458773784355178
+}
+Trained value_based seed=42; saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\smoke\10x10/value_based_seed42.*
+{
+  "episodes": 5,
+  "success_rate": 0.6,
+  "collision_rate": 0.0,
+  "average_reward": -5.380000000000001,
+  "average_steps": 114.4,
+  "unsafe_proposal_rate": 0.2202797202797203,
+  "intervention_rate": 0.2202797202797203
+}
+Trained value_penalty seed=42; saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\smoke\10x10/value_penalty_seed42.*
+{
+  "episodes": 5,
+  "success_rate": 0.6,
+  "collision_rate": 0.0,
+  "average_reward": -5.1,
+  "average_steps": 111.6,
+  "unsafe_proposal_rate": 0.23655913978494625,
+  "intervention_rate": 0.23655913978494625
+}
+Trained fixed_mix seed=42; saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\smoke\10x10/fixed_mix_seed42.*
+{
+  "episodes": 5,
+  "success_rate": 0.0,
+  "collision_rate": 0.0,
+  "average_reward": -20.0,
+  "average_steps": 200.0,
+  "unsafe_proposal_rate": 0.304,
+  "intervention_rate": 0.304
+}
+Trained adaptive seed=42; saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\smoke\10x10/adaptive_seed42.*
+{
+  "episodes": 5,
+  "success_rate": 0.0,
+  "collision_rate": 0.0,
+  "average_reward": -20.0,
+  "average_steps": 200.0,
+  "unsafe_proposal_rate": 0.236,
+  "intervention_rate": 0.236
+}
+Saved checkpoint: C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\adaptive_seed42_ep50.pt
+Saved checkpoint: C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\adaptive_seed42_ep100.pt
+Saved checkpoint: C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\adaptive_seed42_ep150.pt
+Saved checkpoint: C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\adaptive_seed42_ep200.pt
+Saved checkpoint: C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\adaptive_seed42_ep250.pt
+Saved checkpoint: C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\adaptive_seed42_ep300.pt
+Trained adaptive seed=42; saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba/adaptive_seed42.*
+{
+  "episodes": 300,
+  "success_rate": 0.33,
+  "collision_rate": 0.0,
+  "average_reward": -4.675666666666666,
+  "average_steps": 80.08666666666667,
+  "unsafe_proposal_rate": 0.49796054274535917,
+  "intervention_rate": 0.49796054274535917
+}
+Saved C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\adaptive_seed42.png
+{
+  "episodes": 10,
+  "success_rate": 0.0,
+  "collision_rate": 1.0,
+  "average_reward": -10.5,
+  "average_steps": 6.0,
+  "unsafe_proposal_rate": 0.16666666666666666,
+  "intervention_rate": 0.0
+}
+Shield OFF results saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\reload_evaluation\adaptive_seed42_ep50.csv
+{
+  "episodes": 10,
+  "success_rate": 0.0,
+  "collision_rate": 1.0,
+  "average_reward": -10.5,
+  "average_steps": 6.0,
+  "unsafe_proposal_rate": 0.16666666666666666,
+  "intervention_rate": 0.0
+}
+Shield OFF results saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\reload_evaluation\adaptive_seed42_ep100.csv
+{
+  "episodes": 10,
+  "success_rate": 0.0,
+  "collision_rate": 1.0,
+  "average_reward": -10.5,
+  "average_steps": 6.0,
+  "unsafe_proposal_rate": 0.16666666666666666,
+  "intervention_rate": 0.0
+}
+Shield OFF results saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\reload_evaluation\adaptive_seed42_ep150.csv
+{
+  "episodes": 10,
+  "success_rate": 0.0,
+  "collision_rate": 1.0,
+  "average_reward": -10.5,
+  "average_steps": 6.0,
+  "unsafe_proposal_rate": 0.16666666666666666,
+  "intervention_rate": 0.0
+}
+Shield OFF results saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\reload_evaluation\adaptive_seed42_ep200.csv
+{
+  "episodes": 10,
+  "success_rate": 0.0,
+  "collision_rate": 1.0,
+  "average_reward": -10.5,
+  "average_steps": 6.0,
+  "unsafe_proposal_rate": 0.16666666666666666,
+  "intervention_rate": 0.0
+}
+Shield OFF results saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\reload_evaluation\adaptive_seed42_ep250.csv
+{
+  "episodes": 10,
+  "success_rate": 0.0,
+  "collision_rate": 1.0,
+  "average_reward": -10.5,
+  "average_steps": 6.0,
+  "unsafe_proposal_rate": 0.16666666666666666,
+  "intervention_rate": 0.0
+}
+Shield OFF results saved to C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\reload_evaluation\adaptive_seed42_ep300.csv
+Validation complete: C:\Users\<user>\AppData\Local\Temp\safe-rl-validation-1f745bd1-af45-4afc-8e5d-7d5a094126ba\validation.json

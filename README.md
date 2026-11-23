@@ -1,6 +1,6 @@
 # MSML635: Learning-Aware Action Replacement for Reducing Shield Dependence in RL
 
-**Team:** Abhiram Metuku (adaptive/evaluation/metrics/plots), Sai Malkireddy (environment/shield/tests), Sriram Vema (DQN/training). November 8 DQN/training validation is documented below; final comparative experiments and full environment integration remain pending.
+**Team:** Abhiram Metuku (adaptive/evaluation/metrics/plots), Sai Malkireddy (environment/shield/tests), the Double DQN training lead. The final experiment requires the FABR implementation, the shared training configuration, and frozen evaluation scenarios.
 
 ## Setup
 
@@ -17,16 +17,17 @@ Gymnasium is optional in this starter because `environment.py` exposes a compati
 
 ## Train and evaluate
 
-Sriram's November 8 implementation and validation are documented in
-[sriram_nov08.md](sriram_nov08.md). Reproduce the twelve baseline smoke runs,
-continuous 300-episode adaptive run, six checkpoint reload evaluations, and curve:
+Historical standard-DQN validation is documented in
+[training_nov08.md](training_nov08.md). Reproduce the twelve baseline smoke runs,
+continuous 300-episode adaptive run, six checkpoint reload evaluations, and curve
+using the current Double DQN learner and a fresh output directory:
 
 ```bash
-python validate_training.py --output results/nov08_sriram
+python validate_training.py --output results/ddqn_validation
 ```
 
 Training and shield-off evaluation accept `--env-config` with a JSON object of
-GridWorld constructor settings (`size`, `obstacles`, `start`, `goal`, `max_steps`).
+GridWorld constructor settings (`layout`, `size`, `obstacles`, `start`, `starts`, `goal`, `max_steps`).
 JSON settings override `--size`. For initial 10x10 integration:
 
 ```bash
@@ -36,7 +37,8 @@ python evaluate.py --model results/integration10/adaptive_seed42.pt --env-config
 
 Each 50th episode saves a state dictionary named `<method>_seed<seed>_ep<N>.pt`.
 The final `<method>_seed<seed>.pt` uses the same loading format. Summaries record
-the resolved environment, seed, versions, DQN settings, and CPU thread count.
+the resolved environment, seed, versions, Double DQN settings, environment
+steps, optimizer updates, and CPU thread count.
 The default single CPU thread avoids overhead for these small networks.
 
 ```bash
@@ -54,6 +56,26 @@ python plot_results.py --csv results/adaptive_seed42.csv
 
 **Logging:** Training CSV contains environment reward, steps, success, collision, unsafe proposals, interventions, counts of random/value replacement and recent unsafe rate. The replay buffer stores the **executed** action, while the unsafe proposal is tracked for aggregate statistics. `evaluate.py` runs greedy actions with **no shield**.
 
+## Training and provisional results
+
+The online network selects the next action for the Bellman target and the
+target network values it. The target synchronizes every 100 optimizer updates.
+Goal, collision, and timeout all stop bootstrapping. See the
+[training audit](training_audit.md) and [baseline inventory](baseline_inventory.md).
+
+The provisional seed-42 supporting comparison uses 300 episodes on `rooms`.
+Its three greedy evaluation scenarios force each named start once. To regenerate
+the evaluation and manifest from the saved weights and raw logs:
+
+```bash
+python audit_training_artifacts.py
+```
+
+The [results table](main_results_all_seeds.csv) includes the three provisional
+methods and their actual interaction counts. The
+[reproducibility audit](reproducibility_audit.md) documents training commands and
+the remaining dependencies.
+
 ## Known limitations
 
 - **Not a research result:** 300 episodes is a smoke-test setting, not evidence of convergence. Run multiple seeds and compare shield-off success AND collisions.
@@ -64,4 +86,4 @@ python plot_results.py --csv results/adaptive_seed42.csv
 - `--size 6` uses the default 6×6 obstacle layout.
 - `--size 10` defaults to the `rooms` layout.
 - `configs/integration_10x10.json` provides a fixed obstacle configuration for preliminary training.
-- The `zigzag` and `clutter` layouts exist but are not yet selectable through the training/evaluation CLI.
+- Select `rooms`, `zigzag`, or `clutter` by passing a JSON file containing the desired `layout` to `--env-config`.

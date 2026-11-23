@@ -29,6 +29,7 @@ def test_learning_terminal_target_and_target_sync():
     torch.set_num_threads(1)
     agent = DQNAgent(batch_size=2)
     assert agent.learn() is None
+    assert agent.updates == 0
     # Terminal targets must ignore a large target-network prediction.
     for network in (agent.online, agent.target):
         for parameter in network.parameters():
@@ -44,6 +45,19 @@ def test_learning_terminal_target_and_target_sync():
     assert agent.updates == 100
     for online, target in zip(agent.online.parameters(), agent.target.parameters()):
         assert torch.equal(online, target)
+
+
+def test_double_dqn_values_the_online_networks_next_action():
+    agent = DQNAgent(batch_size=1, gamma=0.5)
+    with torch.no_grad():
+        for network in (agent.online, agent.target):
+            for parameter in network.parameters():
+                parameter.zero_()
+        agent.online.net[-1].bias.copy_(torch.tensor([0., 4., 1., 0.]))
+        agent.target.net[-1].bias.copy_(torch.tensor([0., 2., 10., 0.]))
+    agent.remember([0, 0], 0, 1, [1, 1], False)
+    # Online selects action 1, target values it at 2. Target = 2, prediction = 0.
+    assert agent.learn() == pytest.approx(1.5)
 
 
 @pytest.mark.parametrize('method', METHODS)
@@ -62,6 +76,11 @@ def test_all_methods_and_sizes(tmp_path, method, size):
     model = tmp_path / f'{method}_seed42.pt'
     summary = evaluate(model, episodes=2, output=tmp_path / 'evaluation.csv', env_config=config)
     assert summary['episodes'] == 2
+    with (tmp_path / f'{method}_seed42_summary.json').open() as f:
+        training_summary = json.load(f)
+    steps = sum(row['steps'] for row in rows)
+    assert training_summary['training_steps'] == steps
+    assert training_summary['optimizer_updates'] == max(0, steps - 63)
 
 
 def test_checkpoints_and_reproducibility(tmp_path):
@@ -82,27 +101,36 @@ def test_checkpoints_and_reproducibility(tmp_path):
         assert len(list(csv.DictReader(f))) == 100
 
 
-def test_training_stores_executed_action_and_penalized_reward(tmp_path, monkeypatch):
+@pytest.mark.parametrize('method,proposal,expected_reward,interventions', [
+    ('value_penalty', 0, -2.1, 1),
+    ('value_penalty', 1, -0.1, 0),
+    ('value_based', 0, -0.1, 1),
+])
+def test_training_stores_executed_action_and_penalized_reward(
+    tmp_path, monkeypatch, method, proposal, expected_reward, interventions
+):
     import train as training
 
     transitions = []
 
     class InspectAgent(DQNAgent):
         def act(self, observation, epsilon=0):
-            return 0  # up is unsafe from the configured start
+            return proposal
 
         def remember(self, state, executed_action, reward, next_state, done):
-            transitions.append((executed_action, reward, done))
+            transitions.append((state, executed_action, reward, next_state, done))
             super().remember(state, executed_action, reward, next_state, done)
 
     monkeypatch.setattr(training, 'DQNAgent', InspectAgent)
     config = tmp_path / 'env.json'
     config.write_text(json.dumps({'size': 2, 'max_steps': 1, 'obstacles': []}))
-    rows = train('value_penalty', episodes=1, output=tmp_path, penalty=2, env_config=config)
+    rows = train(method, episodes=1, output=tmp_path, penalty=2, env_config=config)
     assert len(transitions) == 1
-    action, reward, done = transitions[0]
-    assert action in (1, 2)
-    assert reward == pytest.approx(-2.1)
+    state, action, reward, next_state, done = transitions[0]
+    assert action in ((1, 2) if interventions else (1,))
+    np.testing.assert_array_equal(state, [0, 0])
+    np.testing.assert_array_equal(next_state, [0, 1] if action == 1 else [1, 0])
+    assert reward == pytest.approx(expected_reward)
     assert done
     assert rows[0]['reward'] == pytest.approx(-0.1)
-    assert rows[0]['unsafe_proposals'] == rows[0]['interventions'] == rows[0]['value_replacements'] == 1
+    assert rows[0]['unsafe_proposals'] == rows[0]['interventions'] == rows[0]['value_replacements'] == interventions

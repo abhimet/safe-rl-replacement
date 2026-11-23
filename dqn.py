@@ -1,4 +1,4 @@
-"""Simple DQN: executed actions are stored in replay; original proposals logged separately."""
+"""Double DQN with executed-action replay."""
 from collections import deque
 import random
 import numpy as np
@@ -45,7 +45,9 @@ class DQNAgent:
         dones = torch.as_tensor([t[4] for t in batch], dtype=torch.float32)
         current = self.online(states).gather(1, actions).squeeze(1)
         with torch.no_grad():
-            targets = rewards + self.gamma * self.target(next_states).max(1).values * (1 - dones)
+            next_actions = self.online(next_states).argmax(dim=1, keepdim=True)
+            next_values = self.target(next_states).gather(1, next_actions).squeeze(1)
+            targets = rewards + self.gamma * next_values * (1 - dones)
         loss = nn.functional.smooth_l1_loss(current, targets)
         self.optimizer.zero_grad()
         loss.backward()
