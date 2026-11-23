@@ -9,7 +9,10 @@ EXPECTED_LAYOUTS = {
     'rooms': (15, {(0, 0): 18, (0, 9): 15, (6, 0): 12}),
     'zigzag': (28, {(0, 0): 38, (4, 9): 19, (8, 0): 10}),
     'clutter': (28, {(0, 0): 18, (4, 9): 5, (7, 0): 13}),
+    'spiral': (40, {(0, 0): 40, (9, 0): 31, (9, 9): 58}),
+    'pillars': (30, {(9, 0): 18, (9, 4): 14, (9, 9): 13}),
 }
+EXPECTED_GOALS = {'spiral': (4, 4), 'pillars': (0, 9)}
 
 def test_movement_and_goal():
     env = GridWorld(size=2, obstacles=set())
@@ -61,7 +64,7 @@ def test_layout_configuration_and_paths(name):
     obstacle_count, start_distances = EXPECTED_LAYOUTS[name]
     env = GridWorld(layout=name)
     distances = env.distances_to_goal()
-    assert env.size == 10 and env.goal == (9, 9)
+    assert env.size == 10 and env.goal == EXPECTED_GOALS.get(name, (9, 9))
     assert len(env.obstacles) == obstacle_count
     assert len(distances) == 100 - obstacle_count  # every free cell reaches the goal
     assert set(env.starts) == set(start_distances)
@@ -101,6 +104,19 @@ def test_goal_on_10x10():
     env.reset(options={'start': (9, 8)})
     obs, reward, terminated, truncated, info = env.step(1)
     assert obs.tolist() == [1.0, 1.0]
+    assert reward == 10 and terminated and not truncated and info['success']
+
+
+def test_train_and_heldout_split_is_disjoint_and_complete():
+    from environment import HELDOUT_LAYOUTS, TRAIN_LAYOUTS
+    assert set(TRAIN_LAYOUTS).isdisjoint(HELDOUT_LAYOUTS)
+    assert set(TRAIN_LAYOUTS) | set(HELDOUT_LAYOUTS) == set(TEN_BY_TEN)
+
+
+def test_goal_on_new_heldout_layouts():
+    env = GridWorld(layout='pillars')
+    env.reset(options={'start': (0, 8)})
+    obs, reward, terminated, truncated, info = env.step(1)
     assert reward == 10 and terminated and not truncated and info['success']
 
 def test_truncation_on_10x10():
@@ -183,3 +199,92 @@ def test_invalid_configuration_is_rejected(kwargs):
 def test_malformed_layouts_are_rejected(rows):
     with pytest.raises(ValueError):
         parse_layout(rows)
+
+
+# --- Sai: environment validation additions (Task 1) ---
+import numpy as np
+
+TEN_BY_TEN = [name for name in sorted(LAYOUTS) if GridWorld(layout=name).size == 10]
+
+
+@pytest.mark.parametrize('name', TEN_BY_TEN)
+def test_map_observation_encodes_position_goal_and_obstacles(name):
+    env = GridWorld(layout=name, observation_mode='map')
+    for start in env.starts:
+        obs, _ = env.reset(options={'start': start})
+        assert obs.shape == (4 + 100,) and obs.dtype == np.float32
+        assert obs.min() >= 0.0 and obs.max() <= 1.0
+        assert obs[:2].tolist() == pytest.approx([start[0] / 9, start[1] / 9])
+        assert obs[2:4].tolist() == pytest.approx([env.goal[0] / 9, env.goal[1] / 9])
+        grid = obs[4:].reshape(10, 10)
+        assert {(r, c) for r in range(10) for c in range(10) if grid[r, c] == 1.0} == env.obstacles
+        assert set(np.unique(grid).tolist()) <= {0.0, 1.0}
+
+
+def test_map_observation_distinguishes_layouts_with_equal_dimension():
+    observations = {name: GridWorld(layout=name, observation_mode='map').reset(
+        options={'start': (0, 0)})[0] for name in TEN_BY_TEN}
+    assert len({obs.shape for obs in observations.values()}) == 1  # train.py multi-layout requirement
+    names = list(observations)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            assert not np.array_equal(observations[a], observations[b])
+
+
+def test_map_observation_tracks_movement():
+    env = GridWorld(layout='rooms', observation_mode='map')
+    first, _ = env.reset(options={'start': (0, 0)})
+    moved, *_ = env.step(1)
+    assert moved[:2].tolist() == pytest.approx([0.0, 1 / 9])
+    assert np.array_equal(first[2:], moved[2:])  # goal and map are static
+
+
+@pytest.mark.parametrize('name', TEN_BY_TEN)
+def test_rewards_and_flags_are_exact_for_every_cell_and_action(name):
+    env = GridWorld(layout=name)
+    for cell in env.distances_to_goal():
+        if cell == env.goal:
+            continue
+        for action, (dr, dc) in enumerate(env.ACTIONS):
+            env.reset(options={'start': cell})
+            target = (cell[0] + dr, cell[1] + dc)
+            hits = not (0 <= target[0] < 10 and 0 <= target[1] < 10) or target in env.obstacles
+            _, reward, terminated, truncated, info = env.step(action)
+            if hits:
+                assert (reward, terminated, info['collision'], env.position) == (-10.0, True, True, cell)
+            elif target == env.goal:
+                assert (reward, terminated, info['success'], env.position) == (10.0, True, True, target)
+            else:
+                assert (reward, terminated, info['collision'], info['success']) == (-0.1, False, False, False)
+                assert env.position == target
+            assert not truncated
+
+
+def test_success_on_final_step_is_terminal_not_truncated():
+    env = GridWorld(layout='rooms', max_steps=1)
+    env.reset(options={'start': (9, 8)})
+    _, reward, terminated, truncated, info = env.step(1)
+    assert reward == 10 and terminated and not truncated and info['success']
+
+
+def test_collision_on_final_step_is_terminal_not_truncated():
+    env = GridWorld(layout='zigzag', max_steps=1)
+    env.reset(options={'start': (0, 0)})
+    _, reward, terminated, truncated, info = env.step(0)
+    assert reward == -10 and terminated and not truncated and info['collision']
+
+
+def test_step_rejects_invalid_actions():
+    env = GridWorld(layout='rooms')
+    env.reset()
+    for bad in (-1, 4):
+        with pytest.raises(ValueError):
+            env.step(bad)
+
+
+@pytest.mark.parametrize('name', TEN_BY_TEN)
+def test_forced_start_ignores_seed(name):
+    env = GridWorld(layout=name)
+    for seed in range(5):
+        for start in env.starts:
+            assert env.reset(seed=seed, options={'start': start})[1]['start'] == start

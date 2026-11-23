@@ -1,0 +1,83 @@
+{
+  "experimental_status": "one seed, diagnostic not final statistical comparison",
+  "holdout_tested": false,
+  "arms": [
+    "both replay = simulated safe outcomes credited to rejected actions",
+    "executed replay = only real executed transitions",
+    "counterfactual replay = real executed transitions + synthetic true collision labels for rejected actions"
+  ],
+  "limitations": [
+    "different training steps and replay contents",
+    "only 300 episodes per run",
+    "only one seed",
+    "oracle labels enabled by deterministic GridWorld"
+  ],
+  "results": [
+    {
+      "mode": "both",
+      "layout": "rooms",
+      "successes": 4,
+      "starts": 84,
+      "success_pct": 4.76,
+      "collision_pct": 95.24,
+      "training_steps": 20523,
+      "credited_proposals": 7852,
+      "counterfactual_samples": 0
+    },
+    {
+      "mode": "both",
+      "layout": "zigzag",
+      "successes": 9,
+      "starts": 71,
+      "success_pct": 12.68,
+      "collision_pct": 87.32,
+      "training_steps": 20523,
+      "credited_proposals": 7852,
+      "counterfactual_samples": 0
+    },
+    {
+      "mode": "executed",
+      "layout": "rooms",
+      "successes": 4,
+      "starts": 84,
+      "success_pct": 4.76,
+      "collision_pct": 95.24,
+      "training_steps": 21864,
+      "credited_proposals": 0,
+      "counterfactual_samples": 0
+    },
+    {
+      "mode": "executed",
+      "layout": "zigzag",
+      "successes": 1,
+      "starts": 71,
+      "success_pct": 1.41,
+      "collision_pct": 98.59,
+      "training_steps": 21864,
+      "credited_proposals": 0,
+      "counterfactual_samples": 0
+    },
+    {
+      "mode": "counterfactual",
+      "layout": "rooms",
+      "successes": 4,
+      "starts": 84,
+      "success_pct": 4.76,
+      "collision_pct": 59.52,
+      "training_steps": 27593,
+      "credited_proposals": 0,
+      "counterfactual_samples": 5063
+    },
+    {
+      "mode": "counterfactual",
+      "layout": "zigzag",
+      "successes": 0,
+      "starts": 71,
+      "success_pct": 0.0,
+      "collision_pct": 16.9,
+      "training_steps": 27593,
+      "credited_proposals": 0,
+      "counterfactual_samples": 5063
+    }
+  ]
+}

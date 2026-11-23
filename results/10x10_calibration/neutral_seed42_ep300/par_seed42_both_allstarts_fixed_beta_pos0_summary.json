@@ -1,0 +1,33 @@
+{
+  "method": "par",
+  "storage_mode": "both",
+  "seed": 42,
+  "episodes": 300,
+  "environment": {
+    "size": 10,
+    "observation_mode": "map",
+    "train_layouts": [
+      "rooms",
+      "zigzag"
+    ]
+  },
+  "train_start_policy": "all_reachable",
+  "window": 100,
+  "penalty": 1.0,
+  "lr": 0.0001,
+  "backup_mode": "standard",
+  "par_beta_min": -4.0,
+  "par_beta_max": 4.0,
+  "par_fixed_beta": 0.0,
+  "initial_greedy_unsafe_rate": 0.13,
+  "target": "double_dqn",
+  "input_dim": 104,
+  "torch_version": "2.2.2",
+  "credited_proposals": 7852,
+  "success_rate": 0.46,
+  "collision_rate": 0.0,
+  "average_reward": -2.1949999999999985,
+  "average_steps": 68.41,
+  "unsafe_proposal_rate": 0.3825951371631828,
+  "intervention_rate": 0.3825951371631828
+}

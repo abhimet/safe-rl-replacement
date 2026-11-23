@@ -1,0 +1,22 @@
+{
+  "method": "worst_safe",
+  "storage_mode": "both",
+  "seed": 42,
+  "episodes": 300,
+  "environment": {
+    "size": 6
+  },
+  "window": 100,
+  "penalty": 1.0,
+  "lr": 0.0001,
+  "backup_mode": "standard",
+  "target": "double_dqn",
+  "torch_version": "2.2.2",
+  "credited_proposals": 3521,
+  "success_rate": 0.76,
+  "collision_rate": 0.0,
+  "average_reward": 3.475333333333334,
+  "average_steps": 42.00666666666667,
+  "unsafe_proposal_rate": 0.2794000952229805,
+  "intervention_rate": 0.2794000952229805
+}

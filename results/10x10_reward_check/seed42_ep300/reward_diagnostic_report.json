@@ -1,0 +1,73 @@
+{
+  "status": "single-seed diagnostic, NOT final evidence",
+  "train_only_layouts": [
+    "rooms",
+    "zigzag"
+  ],
+  "holdout_evaluated": false,
+  "comparison": "counterfactual replay, fixed beta=0, seed=42, 300 episodes",
+  "reward_note": "Potential shaping uses oracle shortest-path distance for TRAINING REWARD only; no change to observations/evaluation",
+  "limits": [
+    "different environment-step counts",
+    "single training seed",
+    "only two training layouts"
+  ],
+  "results": [
+    {
+      "reward": "original",
+      "layout": "rooms",
+      "starts": 84,
+      "successes": 4,
+      "collisions": 50,
+      "timeouts": 30,
+      "success_pct": 4.76,
+      "collision_pct": 59.52,
+      "timeout_pct": 35.71,
+      "training_steps": 27593,
+      "train_success_pct": 14.33,
+      "train_timeout_pct": 85.67
+    },
+    {
+      "reward": "original",
+      "layout": "zigzag",
+      "starts": 71,
+      "successes": 0,
+      "collisions": 12,
+      "timeouts": 59,
+      "success_pct": 0.0,
+      "collision_pct": 16.9,
+      "timeout_pct": 83.1,
+      "training_steps": 27593,
+      "train_success_pct": 14.33,
+      "train_timeout_pct": 85.67
+    },
+    {
+      "reward": "potential",
+      "layout": "rooms",
+      "starts": 84,
+      "successes": 9,
+      "collisions": 14,
+      "timeouts": 61,
+      "success_pct": 10.71,
+      "collision_pct": 16.67,
+      "timeout_pct": 72.62,
+      "training_steps": 20419,
+      "train_success_pct": 46.0,
+      "train_timeout_pct": 54.0
+    },
+    {
+      "reward": "potential",
+      "layout": "zigzag",
+      "starts": 71,
+      "successes": 7,
+      "collisions": 22,
+      "timeouts": 42,
+      "success_pct": 9.86,
+      "collision_pct": 30.99,
+      "timeout_pct": 59.15,
+      "training_steps": 20419,
+      "train_success_pct": 46.0,
+      "train_timeout_pct": 54.0
+    }
+  ]
+}

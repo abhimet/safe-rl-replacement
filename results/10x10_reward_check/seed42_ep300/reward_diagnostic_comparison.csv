@@ -1,0 +1,5 @@
+reward,layout,starts,successes,collisions,timeouts,success_pct,collision_pct,timeout_pct,training_steps,train_success_pct,train_timeout_pct
+original,rooms,84,4,50,30,4.76,59.52,35.71,27593,14.33,85.67
+original,zigzag,71,0,12,59,0.0,16.9,83.1,27593,14.33,85.67
+potential,rooms,84,9,14,61,10.71,16.67,72.62,20419,46.0,54.0
+potential,zigzag,71,7,22,42,9.86,30.99,59.15,20419,46.0,54.0

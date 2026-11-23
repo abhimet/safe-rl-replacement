@@ -1,0 +1,23 @@
+[
+  {
+    "layout": "heldout_1",
+    "density": 0.13,
+    "reachable_starts": 89,
+    "sha256": "fffa6db44274c89a0622f723007774053ba1aaf90d586be561e22d85e4de7bd8",
+    "config_file": "configs/holdout_suite/heldout_1.json"
+  },
+  {
+    "layout": "heldout_2",
+    "density": 0.23,
+    "reachable_starts": 77,
+    "sha256": "1c2ee1ecb2107be7ea891f9fb2a278cf4498598a598f2ac34964f0210d3f4107",
+    "config_file": "configs/holdout_suite/heldout_2.json"
+  },
+  {
+    "layout": "heldout_3",
+    "density": 0.32,
+    "reachable_starts": 61,
+    "sha256": "03b62faa8d27df99c0775ad2577bc03449412ae6737ccee7fe5440304d294828",
+    "config_file": "configs/holdout_suite/heldout_3.json"
+  }
+]

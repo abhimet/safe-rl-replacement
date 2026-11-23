@@ -1,0 +1,20 @@
+{
+  "method": "adaptive",
+  "seed": 42,
+  "episodes": 300,
+  "environment": {
+    "size": 6
+  },
+  "window": 100,
+  "penalty": 1.0,
+  "lr": 0.0001,
+  "backup_mode": "shield_safe",
+  "target": "double_dqn",
+  "torch_version": "2.2.2",
+  "success_rate": 0.84,
+  "collision_rate": 0.0,
+  "average_reward": 4.695333333333336,
+  "average_steps": 37.88666666666666,
+  "unsafe_proposal_rate": 0.49005806792187223,
+  "intervention_rate": 0.49005806792187223
+}
