@@ -10,6 +10,13 @@ A distinct, nine-run **safety-credit** comparison (5k env steps, seeds 42–44) 
 python run_comparison.py --track safety_credit --methods value_based par par_count --steps 5000 --seeds 42 43 44 --output results/reproduction_5k
 ```
 
+**Evaluation (2026-11-23):** every method is evaluated shield-OFF on the frozen
+`evaluation_scenarios_v2.json` (581 scenarios: train rooms/zigzag, development-inspected
+clutter, held-out pillars/spiral/heldout_1..3). `run_comparison.py` does this automatically.
+See [EVALUATION_PROTOCOL.md](EVALUATION_PROTOCOL.md). **Note:** the checkpoints and CSVs behind
+the FABR v3 numbers above (`results/fabr_safety_credit_5k/`) were never committed, so those
+numbers must be regenerated with the command above before they can be verified.
+
 `--track safety_credit` uses model-derived collision counterfactuals and safe-action Double DQN backups for all three shielded conditions. This **does not have the same knowledge assumptions as the original model-free or shortest-path-teacher tracks**. Existing results/checkpoints are preserved.
 
 ---

@@ -22,11 +22,12 @@ def evaluate(
     observation_mode="position",
     scenarios=None,
     split=None,
+    family=None,
 ):
     if scenarios is not None:
-        return evaluate_scenarios(model, scenarios, output=output, split=split)
-    if split is not None:
-        raise ValueError("--split requires --scenarios")
+        return evaluate_scenarios(model, scenarios, output=output, split=split, family=family)
+    if split is not None or family is not None:
+        raise ValueError("--split and --family require --scenarios")
     if episodes < 1:
         raise ValueError("episodes must be positive")
 
@@ -140,18 +141,41 @@ def run_greedy_episode(network, env, start):
     }
 
 
-def load_scenarios(path, split=None):
+SPLITS = ("train", "dev_inspected", "heldout")
+FAMILIES = ("designed", "random")
+
+
+def load_scenarios(path, split=None, family=None):
     with open(path, encoding="utf-8") as f:
         spec = json.load(f)
-    if split not in (None, "train", "heldout"):
-        raise ValueError("split must be train or heldout")
-    chosen = [s for s in spec["scenarios"] if split is None or s["split"] == split]
+    if split not in (None, *SPLITS):
+        raise ValueError(f"split must be one of {SPLITS}")
+    if family not in (None, *FAMILIES):
+        raise ValueError(f"family must be one of {FAMILIES}")
+    chosen = [s for s in spec["scenarios"]
+              if (split is None or s["split"] == split)
+              and (family is None or s.get("family") == family)]
     if not chosen:
-        raise ValueError(f"No scenarios for split {split!r} in {path}")
+        raise ValueError(f"No scenarios for split={split!r}, family={family!r} in {path}")
     return spec, chosen
 
 
-def evaluate_scenarios(model, scenarios, output="results/shield_off.csv", split=None):
+def scenario_env(spec, name, scenario_path):
+    """Build the environment for one scenario layout: a named map, or a hash-checked config file (v2)."""
+    info = spec.get("layouts", {}).get(name, {})
+    if "config" not in info:
+        return GridWorld(layout=name, max_steps=spec["max_steps"],
+                         observation_mode=spec["observation_mode"])
+    from make_eval_scenarios import config_env, sha256
+    config_path = Path(scenario_path).parent / info["config"]
+    if sha256(config_path) != info["sha256"]:
+        raise ValueError(f"{config_path} does not match the sha256 frozen in {scenario_path}")
+    with config_path.open(encoding="utf-8") as f:
+        config = json.load(f)
+    return config_env(config, spec["max_steps"], spec["observation_mode"])
+
+
+def evaluate_scenarios(model, scenarios, output="results/shield_off.csv", split=None, family=None):
     """Evaluate a checkpoint on the frozen scenario set (shield off, greedy)."""
     torch.set_num_threads(1)
     weights = torch.load(model, map_location="cpu", weights_only=True)
@@ -161,14 +185,13 @@ def evaluate_scenarios(model, scenarios, output="results/shield_off.csv", split=
     if input_dim is None:
       input_dim = weights["net.0.weight"].shape[1]
 
-    spec, chosen = load_scenarios(scenarios, split)
+    spec, chosen = load_scenarios(scenarios, split, family)
     envs = {}
     rows = []
     for index, scenario in enumerate(chosen):
         name = scenario["layout"]
         if name not in envs:
-            envs[name] = GridWorld(layout=name, max_steps=spec["max_steps"],
-                                   observation_mode=spec["observation_mode"])
+            envs[name] = scenario_env(spec, name, scenarios)
             if envs[name].observation_dim != input_dim:
                 raise ValueError(
                     f"Model expects {input_dim} features, but {name} provides "
@@ -178,6 +201,7 @@ def evaluate_scenarios(model, scenarios, output="results/shield_off.csv", split=
             "episode": index + 1,
             "scenario_id": scenario["id"],
             "split": scenario["split"],
+            **({"family": scenario["family"]} if "family" in scenario else {}),
             "layout": name,
             "start": str(tuple(scenario["start"])),
             "marked_start": int(scenario["marked_start"]),
@@ -194,8 +218,8 @@ def evaluate_scenarios(model, scenarios, output="results/shield_off.csv", split=
 
     summary = {"model": str(model), "scenarios": str(scenarios),
                "scenario_version": spec["version"], "overall": summarize(rows)}
-    for key in ("split", "layout"):
-        for value in dict.fromkeys(row[key] for row in rows):
+    for key in ("split", "family", "layout"):
+        for value in dict.fromkeys(row[key] for row in rows if key in row):
             summary[f"{key}={value}"] = summarize(r for r in rows if r[key] == value)
     print(json.dumps(summary, indent=2))
     print(f"Shield OFF scenario results saved to {out}")
@@ -212,7 +236,9 @@ if __name__ == "__main__":
     p.add_argument("--seed", type=int, default=10000)
     p.add_argument("--all-starts", action="store_true")
     p.add_argument("--layout", choices=tuple(LAYOUTS))
-    p.add_argument("--scenarios", help="Frozen evaluation_scenarios.json; overrides layout/start options")
-    p.add_argument("--split", choices=("train", "heldout"), help="Only with --scenarios")
+    p.add_argument("--scenarios", help="Frozen scenario file (official: evaluation_scenarios_v2.json); "
+                                        "overrides layout/start options")
+    p.add_argument("--split", choices=SPLITS, help="Only with --scenarios")
+    p.add_argument("--family", choices=FAMILIES, help="Only with --scenarios (v2)")
     p.add_argument("--observation-mode", choices=("position", "map"), default="position")
     evaluate(**vars(p.parse_args()))

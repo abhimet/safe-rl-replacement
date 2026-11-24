@@ -3,6 +3,10 @@
 Three distinct tracks are available: historical model-free, model-based
 collision safety-credit, and planner-assisted. Never pool them as though
 they share training supervision.
+
+Every final checkpoint is evaluated shield-OFF on the frozen scenario file
+(default evaluation_scenarios_v2.json), so all methods share one evaluation.
+Results are reported per layout with their split; see EVALUATION_PROTOCOL.md.
 """
 
 import argparse
@@ -11,6 +15,7 @@ import json
 from pathlib import Path
 
 from evaluate import evaluate
+from make_eval_scenarios import V2_PATH
 from train import train
 
 MODEL_FREE_METHODS = ("unshielded", "random_safe", "value_based", "value_penalty", "adaptive", "par")
@@ -21,7 +26,7 @@ SAFETY_CREDIT_METHODS = ("value_based", "par", "par_count", "random_safe", "adap
 def run_comparison(output="results/final_comparison", track="model_free",
                    steps=20000, seeds=(42, 43, 44), methods=None,
                    expert_updates=2000, expert_weight=0.3,
-                   par_schedule="absolute", overwrite=False):
+                   par_schedule="absolute", overwrite=False, scenarios=V2_PATH):
     if steps < 1 or not seeds:
         raise ValueError("steps must be positive and seeds nonempty")
     if track not in ("model_free", "assisted", "safety_credit"):
@@ -67,14 +72,10 @@ def run_comparison(output="results/final_comparison", track="model_free",
             checkpoints = sorted(directory.glob("*.pt"))
             if len(checkpoints) != 1:
                 raise RuntimeError(f"Expected one final checkpoint in {directory}, found {checkpoints}")
-            for layout in ("rooms", "zigzag", "clutter"):
-                result = evaluate(model=str(checkpoints[0]), size=10, layout=layout,
-                                  observation_mode="map", all_starts=True,
-                                  output=str(directory / f"shield_off_{layout}.csv"))
-                experiments.append({"track": track, "method": method, "seed": seed,
-                                    "training_steps": steps, "layout": layout,
-                                    "held_out": layout == "clutter",
-                                    "checkpoint": str(checkpoints[0]), **result})
+            experiments += evaluate_checkpoint(checkpoints[0], scenarios,
+                                               directory / "shield_off_scenarios.csv",
+                                               track=track, method=method, seed=seed,
+                                               training_steps=steps)
             with (directory / "run_config.json").open("w") as stream:
                 json.dump(kwargs, stream, indent=2)
 
@@ -89,7 +90,8 @@ def run_comparison(output="results/final_comparison", track="model_free",
         grouped.setdefault(key, []).append(row)
     aggregate = []
     for (method, layout), group in sorted(grouped.items()):
-        aggregate.append({"method": method, "layout": layout, "seeds": len(group),
+        aggregate.append({"method": method, "layout": layout, "split": group[0]["split"],
+                          "seeds": len(group),
                           "mean_success_rate": sum(r["success_rate"] for r in group)/len(group),
                           "mean_collision_rate": sum(r["collision_rate"] for r in group)/len(group),
                           "mean_unsafe_proposal_rate": sum(r["unsafe_proposal_rate"] for r in group)/len(group)})
@@ -99,6 +101,21 @@ def run_comparison(output="results/final_comparison", track="model_free",
         writer.writerows(aggregate)
     print(f"Saved {len(experiments)} shield-off evaluations to {path}")
     return aggregate
+
+
+def evaluate_checkpoint(checkpoint, scenarios, output, **labels):
+    """Shield-OFF evaluation on every frozen scenario; one row per layout, tagged with its split."""
+    with open(scenarios, encoding="utf-8") as stream:
+        spec = json.load(stream)
+    summary = evaluate(model=str(checkpoint), scenarios=str(scenarios), output=str(output))
+    rows = []
+    for layout in dict.fromkeys(s["layout"] for s in spec["scenarios"]):
+        first = next(s for s in spec["scenarios"] if s["layout"] == layout)
+        rows.append({**labels, "layout": layout, "split": first["split"],
+                     "family": first.get("family", ""),
+                     "scenario_version": spec["version"],
+                     "checkpoint": str(checkpoint), **summary[f"layout={layout}"]})
+    return rows
 
 
 if __name__ == "__main__":
@@ -112,4 +129,6 @@ if __name__ == "__main__":
     p.add_argument("--expert-weight", type=float, default=0.3)
     p.add_argument("--par-schedule", choices=("relative", "absolute"), default="absolute")
     p.add_argument("--overwrite", action="store_true")
+    p.add_argument("--scenarios", default=str(V2_PATH),
+                   help="Frozen scenario file for shield-OFF evaluation (default: v2)")
     run_comparison(**vars(p.parse_args()))
