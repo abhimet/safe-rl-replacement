@@ -1,4 +1,9 @@
-"""Evaluate *already trained* checkpoints on the fixed holdout suite."""
+"""Evaluate *already trained* checkpoints on the fixed holdout suite.
+
+Superseded: the holdout suite is part of evaluation_scenarios_v2.json (family=random),
+and `evaluate.py --scenarios evaluation_scenarios_v2.json` gives identical numbers
+(see test_v2_random_family_equals_legacy_holdout_evaluation). Kept for old result folders.
+"""
 import argparse
 import contextlib
 import csv
