@@ -63,6 +63,7 @@ def train(
     par_beta_min=-4.0,
     par_beta_max=4.0,
     par_fixed_beta=None,
+    par_fixed_unsafe_rate=None,
     par_schedule="relative",
     par_selector="boltzmann",
     par_novelty_weight=2.0,
@@ -96,9 +97,6 @@ def train(
             "Use executed or deterministic counterfactual instead."
         )
 
-    if method == "value_penalty" and storage_mode != "executed":
-        raise ValueError("Penalty baseline needs separate handling")
-
     if backup_mode == "shield_safe" and method == "unshielded":
         raise ValueError("shield_safe backup is only for shielded methods")
 
@@ -129,6 +127,12 @@ def train(
             raise ValueError("--par-fixed-beta can only be used with --method par")
         if not np.isfinite(par_fixed_beta):
             raise ValueError("par_fixed_beta must be finite")
+
+    if par_fixed_unsafe_rate is not None:
+        if par_selector != "count_aware":
+            raise ValueError("par_fixed_unsafe_rate requires par_selector=count_aware")
+        if not 0 <= par_fixed_unsafe_rate <= 1:
+            raise ValueError("par_fixed_unsafe_rate must be in [0, 1]")
 
     if architecture not in ("mlp", "spatial"):
         raise ValueError("Invalid architecture")
@@ -266,6 +270,13 @@ def train(
             .replace(".", "p")
         )
         prefix += f"_fixed_beta_{beta_label}"
+    if par_fixed_unsafe_rate is not None:
+        prefix += "_fixed_rate_" + f"{par_fixed_unsafe_rate:g}".replace(".", "p")
+
+    # Beta and unsafe rate actually passed to the count-aware selector,
+    # so a fixed-constant ablation can be matched to adaptive FABR.
+    count_aware_betas = []
+    count_aware_rates = []
 
     # With a step budget, allow enough episodes to use it even when
     # policies collide quickly (each episode contains at least one step).
@@ -449,10 +460,14 @@ def train(
 
                     if count_aware is not None:
                         state_key = (env_index, tuple(env.position))
+                        selector_rate = (current_rate if par_fixed_unsafe_rate is None
+                                         else float(par_fixed_unsafe_rate))
                         executed = count_aware.select(
                             state_key, safe, q, beta=beta,
-                            unsafe_rate=current_rate,
+                            unsafe_rate=selector_rate,
                         )
+                        count_aware_betas.append(beta)
+                        count_aware_rates.append(selector_rate)
                         count_aware_replacements += 1
                         count_aware_different_from_best_q += int(
                             executed != max(safe, key=lambda a: float(q[a]))
@@ -768,6 +783,9 @@ def train(
         "par_beta_min": par_beta_min,
         "par_beta_max": par_beta_max,
         "par_fixed_beta": par_fixed_beta,
+        "par_fixed_unsafe_rate": par_fixed_unsafe_rate,
+        "count_aware_mean_beta": float(np.mean(count_aware_betas)) if count_aware_betas else None,
+        "count_aware_mean_unsafe_rate": float(np.mean(count_aware_rates)) if count_aware_rates else None,
         "par_schedule": par_schedule,
         "par_selector": par_selector,
         "par_novelty_weight": par_novelty_weight,
@@ -914,6 +932,10 @@ if __name__ == "__main__":
         "--par-fixed-beta",
         type=float,
         default=None,
+    )
+    p.add_argument(
+        "--par-fixed-unsafe-rate", type=float, default=None,
+        help="Count-aware ablation: constant unsafe rate instead of live feedback",
     )
 
     p.add_argument(

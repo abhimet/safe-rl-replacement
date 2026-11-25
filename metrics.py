@@ -5,7 +5,7 @@ def summarize(episodes):
         raise ValueError('No episodes to summarize')
     n = len(rows)
     total_steps = sum(int(row['steps']) for row in rows)
-    return {
+    result = {
         'episodes': n,
         'success_rate': sum(int(row['success']) for row in rows) / n,
         'collision_rate': sum(int(row['collision']) for row in rows) / n,
@@ -14,3 +14,7 @@ def summarize(episodes):
         'unsafe_proposal_rate': sum(int(row['unsafe_proposals']) for row in rows) / total_steps if total_steps else 0.0,
         'intervention_rate': sum(int(row['interventions']) for row in rows) / total_steps if total_steps else 0.0,
     }
+    # Some legacy scripts do not record timeouts; omit the rate rather than report a false 0.
+    if all('timeout' in row for row in rows):
+        result['timeout_rate'] = sum(int(row['timeout']) for row in rows) / n
+    return result
