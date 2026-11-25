@@ -58,6 +58,15 @@ def config_env(config, max_steps=MAX_STEPS, observation_mode=OBSERVATION_MODE):
     return GridWorld(**settings, max_steps=max_steps, observation_mode=observation_mode)
 
 
+def evaluation_maps():
+    """{name: GridWorld} for every non-training map in the official v2 evaluation set."""
+    maps = {name: GridWorld(layout=name, max_steps=MAX_STEPS, observation_mode=OBSERVATION_MODE)
+            for name in (*V2_DEV_INSPECTED, *V2_HELDOUT_DESIGNED)}
+    for name, _, config in holdout_suite():
+        maps[name] = config_env(config)
+    return maps
+
+
 def build(version=1):
     if version == 2:
         return build_v2()

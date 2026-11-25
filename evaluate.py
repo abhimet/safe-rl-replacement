@@ -1,3 +1,11 @@
+"""Evaluate a trained checkpoint on the frozen scenario set (docs/EVALUATION_PROTOCOL.md).
+
+Evaluation is greedy (argmax Q), with no exploration and the SHIELD OFF: the
+agent executes its own proposals, so a collision ends the episode. There is one
+episode per scenario, each from a forced start cell.
+
+    python evaluate.py --model results/runs/fabr_seed42/fabr_seed42.pt --output results/eval.csv
+"""
 import argparse
 import csv
 import json
@@ -6,147 +14,52 @@ from pathlib import Path
 import torch
 
 from dqn import network_from_weights
-from environment import LAYOUTS, GridWorld
+from environment import GridWorld
+from make_eval_scenarios import V2_PATH
 from metrics import summarize
-
-
-def evaluate(
-    model,
-    episodes=100,
-    output="results/shield_off.csv",
-    size=6,
-    env_config=None,
-    all_starts=False,
-    seed=10000,
-    layout=None,
-    observation_mode="position",
-    scenarios=None,
-    split=None,
-    family=None,
-):
-    if scenarios is not None:
-        return evaluate_scenarios(model, scenarios, output=output, split=split, family=family)
-    if split is not None or family is not None:
-        raise ValueError("--split and --family require --scenarios")
-    if episodes < 1:
-        raise ValueError("episodes must be positive")
-
-    # Small single-state networks are faster with one CPU thread.
-    torch.set_num_threads(1)
-    weights = torch.load(model, map_location="cpu", weights_only=True)
-    network = network_from_weights(weights)
-    input_dim = getattr(network, "input_dim", None)
-    if input_dim is None:
-        input_dim = weights["net.0.weight"].shape[1]
-
-    settings = {"size": size, "observation_mode": observation_mode}
-    if layout is not None:
-        if env_config is not None:
-            raise ValueError("Use --layout OR --env-config, not both")
-        settings["layout"] = layout
-    if env_config is not None:
-        with open(env_config, encoding="utf-8") as f:
-            settings.update(json.load(f))
-
-    env = GridWorld(**settings)
-    if env.observation_dim != input_dim:
-        raise ValueError(
-            f"Model expects {input_dim} features, but environment provides "
-            f"{env.observation_dim}. Check --observation-mode and --layout."
-        )
-    rows = []
-
-    starts = (
-        sorted(cell for cell in env.distances_to_goal()
-           if cell != env.goal)
-        if all_starts
-        else [None] * episodes
-    )
-
-    for episode, start in enumerate(starts):
-        if start is None:
-            obs, _ = env.reset(seed=seed + episode)
-        else:
-            obs, _ = env.reset(options={"start": start})
-        reward_sum = 0.0
-        unsafe = 0
-
-        for _ in range(env.max_steps):
-            with torch.no_grad():
-                action = int(
-                    network(
-                        torch.as_tensor(obs, dtype=torch.float32)
-                    ).argmax().item()
-                )
-
-            unsafe += int(action not in env.safe_actions())
-
-            obs, reward, terminated, truncated, info = env.step(
-                action
-            )
-            reward_sum += reward
-
-            if terminated or truncated:
-                break
-
-        rows.append({
-            "episode": episode + 1,
-            "layout": env.layout or "custom",
-            "start": str(start if start is not None else env.start),
-            "reward": round(reward_sum, 4),
-            "steps": env.steps,
-            "success": int(info["success"]),
-            "collision": int(info["collision"]),
-            "timeout": int(truncated),
-            "unsafe_proposals": unsafe,
-            "interventions": 0,
-        })
-
-    out = Path(output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-
-    with out.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
-        writer.writeheader()
-        writer.writerows(rows)
-
-    summary = summarize(rows)
-    print(json.dumps(summary, indent=2))
-    print(f"Shield OFF results saved to {out}")
-    return summary
-
-
-def run_greedy_episode(network, env, start):
-    """One shield-off, exploration-free episode from a forced start."""
-    obs, _ = env.reset(options={"start": start})
-    reward_sum = 0.0
-    unsafe = 0
-    info = {"success": False, "collision": False}
-    truncated = False
-    for _ in range(env.max_steps):
-        with torch.no_grad():
-            action = int(network(torch.as_tensor(obs, dtype=torch.float32)).argmax().item())
-        unsafe += int(action not in env.safe_actions())
-        obs, reward, terminated, truncated, info = env.step(action)
-        reward_sum += reward
-        if terminated or truncated:
-            break
-    return {
-        "reward": round(reward_sum, 4),
-        "steps": env.steps,
-        "success": int(info["success"]),
-        "collision": int(info["collision"]),
-        "timeout": int(truncated),
-        "unsafe_proposals": unsafe,
-        "interventions": 0,
-    }
-
 
 SPLITS = ("train", "dev_inspected", "heldout")
 FAMILIES = ("designed", "random")
 
 
-def load_scenarios(path, split=None, family=None):
+def load_network(path):
+    torch.set_num_threads(1)
+    return network_from_weights(torch.load(path, map_location="cpu", weights_only=True))
+
+
+def rollout(network, env, start, shield=False):
+    """Run one greedy episode. Returns the summary row and the trajectory.
+
+    With shield=True an unsafe greedy action is replaced by the highest-Q safe
+    action (used only for the demo; the official evaluation is shield-off).
+    Trajectory entries are (position, proposed, executed, intervened).
+    """
+    obs, _ = env.reset(options={"start": start})
+    trajectory, reward_sum, unsafe, interventions = [], 0.0, 0, 0
+    info, truncated = {"success": False, "collision": False}, False
+    for _ in range(env.max_steps):
+        with torch.no_grad():
+            q = network(torch.as_tensor(obs, dtype=torch.float32))
+        proposed = int(q.argmax().item())
+        safe = env.safe_actions()
+        executed = proposed
+        if shield and proposed not in safe and safe:
+            executed = max(safe, key=lambda a: float(q[a]))
+        unsafe += int(proposed not in safe)
+        interventions += int(executed != proposed)
+        trajectory.append((env.position, proposed, executed, executed != proposed))
+        obs, reward, terminated, truncated, info = env.step(executed)
+        reward_sum += reward
+        if terminated or truncated:
+            break
+    trajectory.append((env.position, None, None, False))
+    row = {"reward": round(reward_sum, 4), "steps": env.steps, "success": int(info["success"]),
+           "collision": int(info["collision"]), "timeout": int(truncated),
+           "unsafe_proposals": unsafe, "interventions": interventions}
+    return row, trajectory
+
+
+def load_scenarios(path=V2_PATH, split=None, family=None):
     with open(path, encoding="utf-8") as f:
         spec = json.load(f)
     if split not in (None, *SPLITS):
@@ -161,8 +74,8 @@ def load_scenarios(path, split=None, family=None):
     return spec, chosen
 
 
-def scenario_env(spec, name, scenario_path):
-    """Build the environment for one scenario layout: a named map, or a hash-checked config file (v2)."""
+def scenario_env(spec, name, scenario_path=V2_PATH):
+    """Environment for one scenario layout: a named map, or a hash-checked config file."""
     info = spec.get("layouts", {}).get(name, {})
     if "config" not in info:
         return GridWorld(layout=name, max_steps=spec["max_steps"],
@@ -171,75 +84,55 @@ def scenario_env(spec, name, scenario_path):
     config_path = Path(scenario_path).parent / info["config"]
     if sha256(config_path) != info["sha256"]:
         raise ValueError(f"{config_path} does not match the sha256 frozen in {scenario_path}")
-    with config_path.open(encoding="utf-8") as f:
-        config = json.load(f)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
     return config_env(config, spec["max_steps"], spec["observation_mode"])
 
 
-def evaluate_scenarios(model, scenarios, output="results/shield_off.csv", split=None, family=None):
-    """Evaluate a checkpoint on the frozen scenario set (shield off, greedy)."""
-    torch.set_num_threads(1)
-    weights = torch.load(model, map_location="cpu", weights_only=True)
-    network = network_from_weights(weights)
-    network.eval()
-    input_dim = getattr(network, "input_dim", None)
-    if input_dim is None:
-      input_dim = weights["net.0.weight"].shape[1]
+def evaluate(model, scenarios=V2_PATH, output=None, split=None, family=None, verbose=True):
+    """Shield-off evaluation on every chosen scenario.
 
+    Returns {"overall": ..., "split=<s>": ..., "family=<f>": ..., "layout=<name>": ...}.
+    """
+    network = load_network(model)
     spec, chosen = load_scenarios(scenarios, split, family)
-    envs = {}
-    rows = []
+    envs, rows = {}, []
     for index, scenario in enumerate(chosen):
         name = scenario["layout"]
         if name not in envs:
             envs[name] = scenario_env(spec, name, scenarios)
-            if envs[name].observation_dim != input_dim:
-                raise ValueError(
-                    f"Model expects {input_dim} features, but {name} provides "
-                    f"{envs[name].observation_dim}. Scenarios need a {spec['observation_mode']}-mode model.")
-        result = run_greedy_episode(network, envs[name], tuple(scenario["start"]))
-        rows.append({
-            "episode": index + 1,
-            "scenario_id": scenario["id"],
-            "split": scenario["split"],
-            **({"family": scenario["family"]} if "family" in scenario else {}),
-            "layout": name,
-            "start": str(tuple(scenario["start"])),
-            "marked_start": int(scenario["marked_start"]),
-            "shortest_path": scenario["shortest_path"],
-            **result,
-        })
+            if envs[name].observation_dim != network.input_dim:
+                raise ValueError(f"Model expects {network.input_dim} features, but {name} provides "
+                                 f"{envs[name].observation_dim}; scenarios need a map-observation model.")
+        result, _ = rollout(network, envs[name], tuple(scenario["start"]))
+        rows.append({"episode": index + 1, "scenario_id": scenario["id"], "split": scenario["split"],
+                     "family": scenario.get("family", ""), "layout": name,
+                     "start": str(tuple(scenario["start"])),
+                     "marked_start": int(scenario["marked_start"]),
+                     "shortest_path": scenario["shortest_path"], **result})
 
-    out = Path(output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
-        writer.writeheader()
-        writer.writerows(rows)
+    if output:
+        out = Path(output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+            writer.writeheader()
+            writer.writerows(rows)
 
     summary = {"model": str(model), "scenarios": str(scenarios),
                "scenario_version": spec["version"], "overall": summarize(rows)}
     for key in ("split", "family", "layout"):
-        for value in dict.fromkeys(row[key] for row in rows if key in row):
+        for value in dict.fromkeys(row[key] for row in rows if row[key]):
             summary[f"{key}={value}"] = summarize(r for r in rows if r[key] == value)
-    print(json.dumps(summary, indent=2))
-    print(f"Shield OFF scenario results saved to {out}")
+    if verbose:
+        print(json.dumps(summary, indent=2))
     return summary
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--model", required=True)
-    p.add_argument("--episodes", type=int, default=100)
-    p.add_argument("--output", default="results/shield_off.csv")
-    p.add_argument("--size", type=int, default=6)
-    p.add_argument("--env-config")
-    p.add_argument("--seed", type=int, default=10000)
-    p.add_argument("--all-starts", action="store_true")
-    p.add_argument("--layout", choices=tuple(LAYOUTS))
-    p.add_argument("--scenarios", help="Frozen scenario file (official: evaluation_scenarios_v2.json); "
-                                        "overrides layout/start options")
-    p.add_argument("--split", choices=SPLITS, help="Only with --scenarios")
-    p.add_argument("--family", choices=FAMILIES, help="Only with --scenarios (v2)")
-    p.add_argument("--observation-mode", choices=("position", "map"), default="position")
+    p.add_argument("--scenarios", default=str(V2_PATH))
+    p.add_argument("--output", default=None, help="Per-episode CSV (optional)")
+    p.add_argument("--split", choices=SPLITS)
+    p.add_argument("--family", choices=FAMILIES)
     evaluate(**vars(p.parse_args()))
