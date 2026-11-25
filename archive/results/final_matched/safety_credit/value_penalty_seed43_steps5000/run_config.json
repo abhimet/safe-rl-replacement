@@ -1,0 +1,18 @@
+{
+  "method": "value_penalty",
+  "max_env_steps": 5000,
+  "seed": 43,
+  "size": 10,
+  "observation_mode": "map",
+  "train_layouts": [
+    "rooms",
+    "zigzag"
+  ],
+  "train_start_policy": "all_reachable",
+  "storage_mode": "counterfactual",
+  "reward_shaping": "potential",
+  "shaping_scale": 4.0,
+  "output": "results/final_matched/safety_credit/value_penalty_seed43_steps5000",
+  "backup_mode": "shield_safe",
+  "architecture": "spatial"
+}
