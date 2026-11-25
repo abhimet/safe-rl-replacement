@@ -14,6 +14,16 @@ def test_metrics():
     assert result['collision_rate'] == 0.5
     assert result['unsafe_proposal_rate'] == pytest.approx(1/3)
     assert result['intervention_rate'] == pytest.approx(2/15)
+    assert 'timeout_rate' not in result  # rows without timeout info
+
+
+def test_metrics_timeout_rate():
+    rows = [{'steps': 4, 'reward': 0, 'success': s, 'collision': c, 'timeout': t,
+             'unsafe_proposals': 0, 'interventions': 0}
+            for s, c, t in ((1, 0, 0), (0, 1, 0), (0, 0, 1), (0, 0, 1))]
+    result = summarize(rows)
+    assert result['timeout_rate'] == 0.5
+    assert result['success_rate'] + result['collision_rate'] + result['timeout_rate'] == 1
 
 def test_adaptive_rate_window():
     tracker = UnsafeRateTracker(window=2)

@@ -73,3 +73,62 @@ def test_training_saves_new_selector_metadata(tmp_path):
     assert config['architecture'] == 'spatial'
     assert config['backup_mode'] == 'shield_safe'
     assert config['storage_mode'] == 'counterfactual'
+
+
+def _train_count_aware(tmp_path, **extra):
+    import json
+    from train import train
+    train(method='par', seed=42, size=10, observation_mode='map',
+          train_layouts=('rooms', 'zigzag'), train_start_policy='all_reachable',
+          max_env_steps=150, architecture='spatial', par_schedule='absolute',
+          par_beta_min=0, par_beta_max=4, par_selector='count_aware',
+          par_novelty_weight=3, storage_mode='counterfactual',
+          backup_mode='shield_safe', reward_shaping='potential',
+          output=str(tmp_path), **extra)
+    return json.loads(next(tmp_path.glob('*summary.json')).read_text())
+
+
+def test_adaptive_run_records_selector_averages(tmp_path):
+    summary = _train_count_aware(tmp_path)
+    assert summary['count_aware_replacements'] > 0
+    assert 0 <= summary['count_aware_mean_beta'] <= 4
+    assert 0 <= summary['count_aware_mean_unsafe_rate'] <= 1
+    assert summary['par_fixed_unsafe_rate'] is None
+
+
+def test_fixed_ablation_ignores_live_feedback(tmp_path):
+    summary = _train_count_aware(tmp_path, par_fixed_beta=1.25, par_fixed_unsafe_rate=0.4)
+    assert summary['count_aware_replacements'] > 0
+    assert summary['count_aware_mean_beta'] == pytest.approx(1.25)
+    assert summary['count_aware_mean_unsafe_rate'] == pytest.approx(0.4)
+    assert summary['par_fixed_unsafe_rate'] == 0.4
+
+
+@pytest.mark.parametrize('extra', [dict(par_fixed_unsafe_rate=1.5),
+                                   dict(par_fixed_unsafe_rate=0.5, par_selector='boltzmann')])
+def test_rejects_bad_fixed_unsafe_rate(tmp_path, extra):
+    from train import train
+    with pytest.raises(ValueError):
+        train(method='par', max_env_steps=5, output=str(tmp_path),
+              **{'par_selector': 'count_aware', **extra})
+
+
+def test_fixed_constants_average_par_count_seeds(tmp_path):
+    import json
+    from run_comparison import fixed_ablation_constants
+    with pytest.raises(FileNotFoundError):
+        fixed_ablation_constants(tmp_path, 5000)
+    for seed, beta, rate in ((42, 1.0, 0.2), (43, 2.0, 0.4)):
+        run = tmp_path / f'par_count_seed{seed}_steps5000'
+        run.mkdir()
+        (run / 'x_summary.json').write_text(json.dumps(
+            {'count_aware_mean_beta': beta, 'count_aware_mean_unsafe_rate': rate}))
+    # Different budgets and the fixed ablation's own runs are never used.
+    other = tmp_path / 'par_count_fixed_seed42_steps5000'
+    other.mkdir()
+    (other / 'x_summary.json').write_text(json.dumps(
+        {'count_aware_mean_beta': 9.0, 'count_aware_mean_unsafe_rate': 0.9}))
+    constants = fixed_ablation_constants(tmp_path, 5000)
+    assert constants['par_fixed_beta'] == pytest.approx(1.5)
+    assert constants['par_fixed_unsafe_rate'] == pytest.approx(0.3)
+    assert len(constants['derived_from']) == 2

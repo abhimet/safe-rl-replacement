@@ -97,6 +97,7 @@ def evaluate(
             "steps": env.steps,
             "success": int(info["success"]),
             "collision": int(info["collision"]),
+            "timeout": int(truncated),
             "unsafe_proposals": unsafe,
             "interventions": 0,
         })

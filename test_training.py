@@ -106,3 +106,26 @@ def test_training_stores_executed_action_and_penalized_reward(tmp_path, monkeypa
     assert not done  # time-limit truncation must bootstrap, not be terminal
     assert rows[0]['reward'] == pytest.approx(-0.1)
     assert rows[0]['unsafe_proposals'] == rows[0]['interventions'] == rows[0]['value_replacements'] == 1
+
+
+def test_penalty_baseline_with_counterfactual_storage(tmp_path, monkeypatch):
+    import train as training
+
+    transitions = []
+
+    class InspectAgent(DQNAgent):
+        def act(self, observation, epsilon=0):
+            return 0  # up is unsafe from the configured start
+
+        def remember(self, state, action, reward, next_state, done, next_safe_actions=None):
+            transitions.append((action, reward, done))
+            super().remember(state, action, reward, next_state, done, next_safe_actions)
+
+    monkeypatch.setattr(training, 'DQNAgent', InspectAgent)
+    config = tmp_path / 'env.json'
+    config.write_text(json.dumps({'size': 2, 'max_steps': 1, 'obstacles': []}))
+    train('value_penalty', episodes=1, output=tmp_path, penalty=2, env_config=config,
+          storage_mode='counterfactual')
+    (executed, executed_reward, executed_done), (proposed, cf_reward, cf_done) = transitions
+    assert executed in (1, 2) and executed_reward == pytest.approx(-2.1) and not executed_done
+    assert proposed == 0 and cf_reward == pytest.approx(-10.0) and cf_done
