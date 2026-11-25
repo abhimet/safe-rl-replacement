@@ -9,11 +9,13 @@ Every method uses the same configuration; only the shield's replacement rule
   starts cycle through every reachable cell of that map.
 * Observation: agent position, goal position and the 10x10 wall grid (104 inputs).
 * Network: SpatialQNetwork, Double DQN, one gradient update per environment step.
-* Shielded methods additionally get two training signals from the shield:
-  - a collision counterfactual: a blocked proposal is stored as
-    (s, proposed, -10, terminal), because in this deterministic grid that is
-    exactly what would have happened;
-  - a shield-safe bootstrap: the target's next action is chosen among safe actions.
+* Shielded methods bootstrap only through safe actions (the target's next
+  action is chosen among the actions the shield allows).
+* collision_feedback=True (default) adds a collision counterfactual for
+  shielded methods: a blocked proposal is stored as (s, proposed, -10,
+  terminal), because in this deterministic grid that is exactly what would
+  have happened. With --no-collision-feedback the agent never observes the
+  outcome of an unsafe action; it only learns from what it executes.
 * Potential-based reward shaping from the map's shortest-path distances.
   Shaping preserves the optimal policy and is used for training only.
 
@@ -61,7 +63,7 @@ def training_maps(pool_size=100, pool_seed=7):
 
 def train(method="fabr", steps=50000, seed=42, output="results/run", pool_size=100, pool_seed=7,
           window=100, penalty=1.0, lr=1e-4, beta_min=0.0, beta_max=4.0, fixed_beta=None,
-          shaping_scale=4.0, epsilon_fraction=0.8, verbose=True):
+          shaping_scale=4.0, epsilon_fraction=0.8, collision_feedback=True, verbose=True):
     if method not in METHODS:
         raise ValueError(f"Unknown method {method!r}; choose from {METHODS}")
     if steps < 1:
@@ -117,7 +119,7 @@ def train(method="fabr", steps=50000, seed=42, output="results/run", pool_size=1
                 train_reward -= penalty
             next_safe = env.safe_actions() if shielded and not terminated else None
             agent.remember(obs, executed, train_reward, next_obs, terminated, next_safe)
-            if intervened:
+            if intervened and collision_feedback:
                 # Known outcome of the blocked proposal in this deterministic grid.
                 cf_reward = COLLISION_REWARD + shaping_bonus(
                     distances[index], position, position, True, agent.gamma, shaping_scale)
@@ -156,6 +158,7 @@ def train(method="fabr", steps=50000, seed=42, output="results/run", pool_size=1
         "config": dict(pool_size=pool_size, pool_seed=pool_seed, window=window, penalty=penalty,
                        lr=lr, beta_min=beta_min, beta_max=beta_max, fixed_beta=fixed_beta,
                        shaping_scale=shaping_scale, epsilon_fraction=epsilon_fraction,
+                       collision_feedback=collision_feedback,
                        training_maps=len(maps)),
         "mean_beta": float(np.mean(betas)) if betas else None,
         "training": summarize(completed) if completed else None,
@@ -181,4 +184,6 @@ if __name__ == "__main__":
     p.add_argument("--fixed-beta", type=float, default=None, help="Required for fabr_fixed")
     p.add_argument("--beta-max", type=float, default=4.0)
     p.add_argument("--penalty", type=float, default=1.0, help="value_penalty intervention penalty")
+    p.add_argument("--no-collision-feedback", dest="collision_feedback", action="store_false",
+                   help="Do not store the collision counterfactual for blocked proposals")
     train(**vars(p.parse_args()))

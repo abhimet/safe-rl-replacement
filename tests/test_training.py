@@ -167,3 +167,17 @@ def test_shaping_telescopes_and_vanishes_at_terminal():
     # Moving one step closer gives a positive bonus.
     closer = next(n for n in d if d[n] == d[start] - 1 and abs(n[0] - start[0]) + abs(n[1] - start[1]) == 1)
     assert shaping_bonus(d, start, closer, False, 0.99, 4.0) > 0
+
+
+def test_no_collision_feedback_stores_only_executed_transitions(tmp_path, monkeypatch):
+    count = {"n": 0}
+    original = DQNAgent.remember
+
+    def spy(self, *args, **kwargs):
+        count["n"] += 1
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(DQNAgent, "remember", spy)
+    summary = tiny("highest_q", tmp_path, collision_feedback=False)
+    assert summary["config"]["collision_feedback"] is False
+    assert summary["training"]["intervention_rate"] > 0 and count["n"] == 150

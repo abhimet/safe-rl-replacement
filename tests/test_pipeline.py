@@ -49,3 +49,13 @@ def test_plots_and_demo(experiment):
     shield_on, shield_off = runs[0][3], runs[1][3]
     assert shield_on["collision"] == 0
     assert shield_off["interventions"] == 0
+
+
+def test_parallel_jobs_match_serial(tmp_path):
+    kwargs = dict(steps=120, seeds=(5,), methods=("fabr", "fabr_fixed"), pool_size=2,
+                  collision_feedback=False)
+    serial = run_experiments(output=tmp_path / "serial", **kwargs)
+    parallel = run_experiments(output=tmp_path / "parallel", jobs=2, **kwargs)
+    assert serial == parallel
+    config = json.loads((tmp_path / "parallel" / "experiment_config.json").read_text())
+    assert config["collision_feedback"] is False

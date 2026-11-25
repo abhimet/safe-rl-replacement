@@ -1,6 +1,7 @@
 """Train every method on every seed with the same budget, evaluate each shield-off, and aggregate.
 
-    python run_experiments.py --steps 50000 --seeds 42 43 44 45 46 --output results/final
+    python run_experiments.py --steps 50000 --seeds 42 43 44 45 46 --jobs 4 --output results/final
+    python run_experiments.py ... --no-collision-feedback --output results/final_no_cf
 
 Outputs (under --output):
     runs/<method>_seed<k>/        checkpoint, training CSV, summary, shield-off episode CSV
@@ -16,6 +17,7 @@ import argparse
 import csv
 import json
 import statistics
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from evaluate import evaluate
@@ -44,18 +46,21 @@ def ci95(values):
     return T95.get(len(values) - 1, 1.96) * statistics.stdev(values) / len(values) ** 0.5
 
 
-def run_one(root, method, seed, steps, fixed_beta=None, pool_size=100):
+def run_one(root, method, seed, steps, fixed_beta=None, pool_size=100, collision_feedback=True):
     directory = Path(root) / "runs" / f"{method}_seed{seed}"
     summary_path = directory / f"{method}_seed{seed}_summary.json"
     eval_path = directory / "shield_off_eval.json"
     if summary_path.exists() and eval_path.exists():
         summary = json.loads(summary_path.read_text())
-        if summary["steps"] == steps and summary["config"]["fixed_beta"] == fixed_beta:
+        config = summary["config"]
+        if (summary["steps"] == steps and config["fixed_beta"] == fixed_beta
+                and config["pool_size"] == pool_size
+                and config.get("collision_feedback", True) == collision_feedback):
             print(f"[{method} seed={seed}] reusing finished run", flush=True)
             return summary, json.loads(eval_path.read_text())
         raise FileExistsError(f"{directory} holds a run with different settings; use another --output")
     summary = train(method=method, steps=steps, seed=seed, output=directory,
-                    fixed_beta=fixed_beta, pool_size=pool_size)
+                    fixed_beta=fixed_beta, pool_size=pool_size, collision_feedback=collision_feedback)
     result = evaluate(directory / f"{method}_seed{seed}.pt", V2_PATH,
                       output=directory / "shield_off_episodes.csv", verbose=False)
     eval_path.write_text(json.dumps(result, indent=2))
@@ -118,29 +123,43 @@ def write_csv(path, rows):
 
 
 def run_experiments(output="results/final", steps=50000, seeds=(42, 43, 44), methods=METHODS,
-                    fixed_beta=None, pool_size=100):
+                    fixed_beta=None, pool_size=100, collision_feedback=True, jobs=1):
     methods = tuple(methods)
     if any(m not in METHODS for m in methods) or len(set(methods)) != len(methods):
         raise ValueError(f"methods must be distinct names from {METHODS}")
     if "fabr_fixed" in methods and fixed_beta is None and "fabr" not in methods:
         raise ValueError("fabr_fixed needs fabr in the same run or an explicit --fixed-beta")
-    # fabr must finish before fabr_fixed can copy its mean beta.
-    methods = tuple(sorted(methods, key=lambda m: m == "fabr_fixed"))
     root = Path(output)
     root.mkdir(parents=True, exist_ok=True)
-    rows, fabr_betas = [], []
+    common = dict(steps=steps, pool_size=pool_size, collision_feedback=collision_feedback)
+
+    def run_all(tasks):
+        # tasks: [(method, seed, fixed_beta)]; results keep task order.
+        args = [(root, m, s, common["steps"], b, pool_size, collision_feedback) for m, s, b in tasks]
+        if jobs > 1:
+            with ProcessPoolExecutor(max_workers=jobs) as pool:
+                return list(pool.map(run_one, *zip(*args)))
+        return [run_one(*a) for a in args]
+
+    # Phase 1: everything except fabr_fixed. Phase 2: fabr_fixed, which needs fabr's mean beta.
+    first = [(m, s, None) for m in methods if m != "fabr_fixed" for s in seeds]
+    results = dict(zip([(m, s) for m, s, _ in first], run_all(first)))
+    if "fabr_fixed" in methods:
+        if fixed_beta is None:
+            fixed_beta = round(statistics.mean(results[("fabr", s)][0]["mean_beta"] for s in seeds), 4)
+            source = f"mean beta of fabr seeds {list(seeds)}"
+        else:
+            source = "command line"
+        (root / "fabr_fixed_beta.json").write_text(json.dumps(
+            {"fixed_beta": fixed_beta, "source": source}, indent=2))
+        second = [("fabr_fixed", s, fixed_beta) for s in seeds]
+        results.update(zip([(m, s) for m, s, _ in second], run_all(second)))
+    (root / "experiment_config.json").write_text(json.dumps(
+        {**common, "seeds": list(seeds), "methods": list(methods)}, indent=2))
+    rows = []
     for method in methods:
-        beta = None
-        if method == "fabr_fixed":
-            beta = fixed_beta if fixed_beta is not None else round(statistics.mean(fabr_betas), 4)
-            (root / "fabr_fixed_beta.json").write_text(json.dumps(
-                {"fixed_beta": beta, "source": "command line" if fixed_beta is not None
-                 else f"mean beta of fabr seeds {list(seeds)}"}, indent=2))
         for seed in seeds:
-            summary, result = run_one(root, method, seed, steps, beta, pool_size)
-            if method == "fabr":
-                fabr_betas.append(summary["mean_beta"])
-            rows += group_rows(method, seed, summary, result)
+            rows += group_rows(method, seed, *results[(method, seed)])
     write_csv(root / "per_seed.csv", rows)
     agg = aggregate(rows)
     write_csv(root / "aggregate.csv", agg)
@@ -170,4 +189,7 @@ if __name__ == "__main__":
     p.add_argument("--fixed-beta", type=float, default=None,
                    help="beta for fabr_fixed (default: mean beta of this run's fabr seeds)")
     p.add_argument("--pool-size", type=int, default=100)
+    p.add_argument("--no-collision-feedback", dest="collision_feedback", action="store_false",
+                   help="Train without the collision counterfactual (see train.py)")
+    p.add_argument("--jobs", type=int, default=1, help="Parallel training processes")
     run_experiments(**vars(p.parse_args()))
