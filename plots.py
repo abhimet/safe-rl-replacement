@@ -113,6 +113,7 @@ def binned_training(results, bins=40):
         if betas:
             curves[method]["beta_raw"].append(betas)
         curves[method]["x"] = (edges[:-1] + edges[1:]) / 2
+        curves[method]["edges"] = edges
     return curves
 
 
@@ -141,10 +142,17 @@ def beta_trace(results, out):
     if "fabr" not in curves:
         return
     fig, ax = plt.subplots(figsize=(6, 3.4))
+    x, edges = curves["fabr"]["x"], curves["fabr"]["edges"]
+    binned = []
     for seed_trace in curves["fabr"]["beta_raw"]:
-        x, b = zip(*seed_trace)
-        ax.plot(x, b, color=COLORS["fabr"], linewidth=1.2, alpha=0.6)
-    ax.plot([], [], color=COLORS["fabr"], linewidth=2, label="FABR β per episode (one line per seed)")
+        steps, b = (np.array(v) for v in zip(*seed_trace))
+        which = np.clip(np.searchsorted(edges, steps, side="right") - 1, 0, len(x) - 1)
+        per_bin = [b[which == i].mean() if (which == i).any() else np.nan for i in range(len(x))]
+        binned.append(per_bin)
+        ax.plot(x, per_bin, color=COLORS["fabr"], linewidth=0.8, alpha=0.35)
+    if binned:
+        ax.plot(x, np.nanmean(binned, axis=0), color=COLORS["fabr"], linewidth=2.2,
+                label="FABR β (mean over seeds; thin lines = seeds)")
     if "fabr_fixed" in curves and curves["fabr_fixed"]["beta_raw"]:
         fixed = curves["fabr_fixed"]["beta_raw"][0][0][1]
         ax.axhline(fixed, color=COLORS["fabr_fixed"], linewidth=2, linestyle="--",

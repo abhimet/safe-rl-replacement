@@ -1,6 +1,6 @@
 """Train every method on every seed with the same budget, evaluate each shield-off, and aggregate.
 
-    python run_experiments.py --steps 50000 --seeds 42 43 44 45 46 --jobs 4 --output results/final
+    python run_experiments.py --steps 50000 --seeds 42 43 44 45 46 47 48 49 50 51 --jobs 4 --output results/final_cf
     python run_experiments.py ... --no-collision-feedback --output results/final_no_cf
 
 Outputs (under --output):
@@ -107,11 +107,11 @@ def paired(rows, reference="fabr"):
             seeds = [s for (m, s, g) in index if m == method and g == group and (reference, s, g) in index]
             if not seeds:
                 continue
-            for metric in ("success_rate", "collision_rate"):
+            for metric, sign in (("success_rate", 1), ("collision_rate", -1)):  # sign: +1 = higher is better
                 diffs = [index[(reference, s, group)][metric] - index[(method, s, group)][metric] for s in seeds]
                 out.append({"comparison": f"{reference} - {method}", "group": group, "metric": metric,
                             "seeds": len(seeds), "mean_diff": statistics.mean(diffs), "ci95": ci95(diffs),
-                            "fabr_better_seeds": sum(d > 0 for d in diffs)})
+                            "fabr_better_seeds": sum(sign * d > 0 for d in diffs)})
     return out
 
 

@@ -59,3 +59,14 @@ def test_parallel_jobs_match_serial(tmp_path):
     assert serial == parallel
     config = json.loads((tmp_path / "parallel" / "experiment_config.json").read_text())
     assert config["collision_feedback"] is False
+
+
+def test_paired_counts_lower_collision_as_better():
+    from run_experiments import paired
+    rows = [{"method": m, "seed": s, "group": "unseen", "success_rate": succ, "collision_rate": coll}
+            for m, s, succ, coll in [("fabr", 1, 0.5, 0.1), ("fabr", 2, 0.5, 0.4),
+                                     ("highest_q", 1, 0.4, 0.3), ("highest_q", 2, 0.6, 0.3)]]
+    out = {r["metric"]: r for r in paired(rows)}
+    assert out["success_rate"]["fabr_better_seeds"] == 1
+    assert out["collision_rate"]["fabr_better_seeds"] == 1
+    assert out["collision_rate"]["mean_diff"] == pytest.approx(-0.05)
