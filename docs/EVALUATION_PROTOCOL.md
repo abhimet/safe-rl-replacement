@@ -28,7 +28,7 @@ Totals: 155 train, 71 dev_inspected, 355 held-out, 581 in all.
 ## Reporting rules
 
 1. **Report every layout separately.** Never pool splits.
-2. **Clutter is not held-out evidence.** It was consulted during FABR development (`FABR_V3_STUDY.md`). Report it as "development-inspected".
+2. **Clutter is not held-out evidence.** It was consulted during FABR development (`archive/docs/FABR_V3_STUDY.md`). Report it as "development-inspected".
 3. **Report Spiral on its own.** Its paths are about 3× longer than on the training maps, so a failure there mixes unfamiliarity with difficulty.
 4. Any combined held-out number must name exactly which layouts it pools, for example "held-out excl. Spiral (pillars + heldout_1..3, 296 scenarios)".
 5. Only final, frozen checkpoints are evaluated on held-out maps. Never train on, or select models with, `dev_inspected` or `heldout` layouts.
@@ -41,27 +41,33 @@ On 2026-11-22 two held-out definitions were committed minutes apart: v1 `evaluat
 - rooms, zigzag, pillars and spiral scenarios are identical to v1. A test enforces this.
 - clutter: `heldout` → `dev_inspected`.
 - heldout_1..3 were added. Their files are verified against `configs/holdout_suite/manifest.json`, and evaluation refuses a modified file.
-- v2 reproduces the earlier evaluation paths exactly. Per-episode rooms/zigzag results match saved CSVs for two existing checkpoints, and the heldout_1..3 summaries equal `evaluate_holdout_suite.py`'s output (`test_v2_random_family_equals_legacy_holdout_evaluation`).
+- v2 reproduces the earlier evaluation paths exactly. Per-episode rooms/zigzag results match saved CSVs for two existing checkpoints, and the heldout_1..3 summaries equal `evaluate_holdout_suite.py`'s output (this check was run when v2 was frozen; the legacy script is now in `archive/scripts/`).
 
 ## Commands
 
 ```bash
-# Full matched comparison: trains and evaluates every checkpoint on v2 automatically
-python run_comparison.py --track safety_credit --methods value_based par par_count --steps 5000 --seeds 42 43 44 --output results/<name>
-#   -> <method>_seed<k>_steps5000/shield_off_scenarios.csv   (581 per-episode rows)
-#   -> per_seed_layout.csv, aggregate.csv                    (one row per layout, with split)
+# Full comparison: trains every method and evaluates each checkpoint on v2 automatically
+python run_experiments.py --steps 50000 --seeds 42 43 44 45 46 --output results/final
+#   -> runs/<method>_seed<k>/shield_off_episodes.csv   (581 per-episode rows)
+#   -> per_seed.csv, aggregate.csv, paired.csv          (per layout and per pooled group)
 
-# A single existing checkpoint
-python evaluate.py --model <checkpoint.pt> --scenarios evaluation_scenarios_v2.json --output results/eval_v2/<method>_seed<k>.csv
-python evaluate.py --model <checkpoint.pt> --scenarios evaluation_scenarios_v2.json --split heldout --family random --output ...
+# A single checkpoint
+python evaluate.py --model <checkpoint.pt> --output results/eval.csv
+python evaluate.py --model <checkpoint.pt> --split heldout --family random
 
 # Confirm the scenario files are unchanged
 python make_eval_scenarios.py --check
 python make_eval_scenarios.py --version 2 --check
 ```
 
-Per-episode columns: `scenario_id, split, family, layout, start, marked_start, shortest_path, reward, steps, success, collision, timeout, unsafe_proposals, interventions`. The printed summary breaks results down by split, family and layout.
+Per-episode columns: `scenario_id, split, family, layout, start, marked_start, shortest_path, reward, steps, success, collision, timeout, unsafe_proposals, interventions`.
 
-## Known gap
+Pooled groups used in `run_experiments.py`: **familiar** (rooms + zigzag), **dev_clutter** (clutter),
+**unseen** (pillars + heldout_1..3, 296 scenarios), and **unseen_spiral** (spiral, reported on its own).
 
-The FABR v3 numbers in `FABR_V3_STUDY.md` and the README (17.8% / 34.0% / 41.7%) come from `results/fabr_safety_credit_5k/`. That folder has never been committed to any branch. Until it is regenerated with the `run_comparison.py` command above, those numbers can't be verified, and they have no Pillars or Spiral results.
+## Training maps vs. evaluation maps
+
+Training uses rooms, zigzag and 100 generated maps (`environment.generate_training_pool`, seed 7).
+A generated map is rejected if its walls overlap any dev or held-out evaluation map by more than
+50% (Jaccard); `tests/test_training.py` enforces this. Historical v1/v2 provenance notes
+(e.g. the FABR v3 study) are in `archive/docs/`.

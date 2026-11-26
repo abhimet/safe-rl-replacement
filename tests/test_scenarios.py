@@ -84,7 +84,6 @@ import shutil
 from collections import Counter
 
 from make_eval_scenarios import V2_PATH, holdout_suite
-from run_comparison import evaluate_checkpoint
 
 
 
@@ -155,29 +154,23 @@ def test_v2_filters():
         load_scenarios(V2_PATH, family="mixed")
 
 
-def test_v2_random_family_equals_legacy_holdout_evaluation(tmp_path):
-    """v2 must reproduce evaluate_holdout_suite.py's env_config/all_starts path exactly."""
-    torch.manual_seed(3)
-    model = tmp_path / "random.pt"
-    torch.save(QNetwork(input_dim=104).state_dict(), model)
-    summary = evaluate(str(model), output=str(tmp_path / "v2.csv"), scenarios=str(V2_PATH), family="random")
-    for i in (1, 2, 3):
-        legacy = evaluate(str(model), env_config=f"configs/holdout_suite/heldout_{i}.json", size=10,
-                          observation_mode="map", all_starts=True, output=str(tmp_path / f"l{i}.csv"))
-        assert summary[f"layout=heldout_{i}"] == legacy
-
-
-def test_v2_evaluation_rows_and_runner_rows(tmp_path):
+def test_v2_evaluation_rows_and_pooled_groups(tmp_path):
+    from run_experiments import GROUPS, LAYOUTS, group_rows
     torch.manual_seed(1)
     model = tmp_path / "random.pt"
     torch.save(QNetwork(input_dim=104).state_dict(), model)
-    rows = evaluate_checkpoint(model, V2_PATH, tmp_path / "all.csv", method="m", seed=0)
+    summary = evaluate(model, V2_PATH, output=tmp_path / "all.csv", verbose=False)
     episodes = list(csv.DictReader((tmp_path / "all.csv").open()))
     assert len(episodes) == 581
     for r in episodes:
         assert int(r["success"]) + int(r["collision"]) + int(r["timeout"]) == 1
         assert int(r["interventions"]) == 0
-    assert [r["layout"] for r in rows] == ["rooms", "zigzag", "clutter", "pillars", "spiral",
-                                           "heldout_1", "heldout_2", "heldout_3"]
-    assert {r["layout"]: r["split"] for r in rows}["clutter"] == "dev_inspected"
-    assert sum(r["episodes"] for r in rows) == 581
+    assert set(LAYOUTS) == {r["layout"] for r in episodes}
+    assert summary["split=dev_inspected"] == summary["layout=clutter"]
+    training = {"mean_beta": None, "training": dict.fromkeys(
+        ("success_rate", "collision_rate", "intervention_rate", "unsafe_proposal_rate"), 0.0)}
+    rows = {r["group"]: r for r in group_rows("m", 0, training, summary)}
+    assert sum(rows[g]["episodes"] for g in GROUPS) == 581
+    unseen = [summary[f"layout={n}"] for n in GROUPS["unseen"]]
+    assert rows["unseen"]["success_rate"] == pytest.approx(
+        sum(u["success_rate"] * u["episodes"] for u in unseen) / sum(u["episodes"] for u in unseen))

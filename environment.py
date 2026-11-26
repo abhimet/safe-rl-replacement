@@ -244,3 +244,54 @@ class GridWorld(Base):
         truncated = self.steps >= self.max_steps and not terminated
         reward = -10.0 if collision else (10.0 if success else -0.1)
         return self._observation(), reward, terminated, truncated, {'collision': collision, 'success': success}
+
+
+def reachable_cells(size, walls, goal):
+    """Cells (including the goal) connected to the goal by free moves."""
+    seen = {goal}
+    queue = deque([goal])
+    while queue:
+        r, c = queue.popleft()
+        for dr, dc in GridWorld.ACTIONS:
+            cell = (r + dr, c + dc)
+            if 0 <= cell[0] < size and 0 <= cell[1] < size and cell not in walls and cell not in seen:
+                seen.add(cell)
+                queue.append(cell)
+    return seen
+
+
+def wall_overlap(a, b):
+    """Jaccard similarity of two wall sets (1.0 = identical)."""
+    union = a | b
+    return len(a & b) / len(union) if union else 1.0
+
+
+def generate_training_pool(n=100, seed=7, densities=(0.10, 0.30), size=10,
+                           min_reachable=30, avoid=(), max_overlap=0.5, max_steps=100):
+    """Seeded random-obstacle training maps, returned as [(name, GridWorld)].
+
+    Each map has a random goal and uses every goal-reachable cell as a start.
+    Any map whose walls overlap a map in `avoid` (an iterable of wall sets,
+    e.g. the evaluation maps) by more than `max_overlap` is rejected, so the
+    pool cannot leak evaluation geometry into training.
+    """
+    import random
+    rng = random.Random(seed)
+    avoid = [frozenset(map(tuple, walls)) for walls in avoid]
+    pool = []
+    seen = set()
+    while len(pool) < n:
+        density = rng.uniform(*densities)
+        goal = (rng.randrange(size), rng.randrange(size))
+        walls = frozenset((r, c) for r in range(size) for c in range(size)
+                          if (r, c) != goal and rng.random() < density)
+        reachable = reachable_cells(size, walls, goal)
+        if len(reachable) - 1 < min_reachable or (walls, goal) in seen:
+            continue
+        if any(wall_overlap(walls, other) > max_overlap for other in avoid):
+            continue
+        seen.add((walls, goal))
+        env = GridWorld(size=size, obstacles=walls, goal=goal, max_steps=max_steps,
+                        starts=sorted(reachable - {goal}), observation_mode="map")
+        pool.append((f"pool_{len(pool):03d}", env))
+    return pool

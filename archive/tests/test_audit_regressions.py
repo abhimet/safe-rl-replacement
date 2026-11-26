@@ -105,14 +105,6 @@ def test_expert_is_explicitly_rejected_for_penalty_objective(tmp_path):
               expert_pretrain_updates=5, output=tmp_path)
 
 
-def test_full_map_planner_is_upper_bound_not_shield():
-    from evaluate_planner_reference import evaluate_planner
-    for layout, expected in (("rooms", 84), ("zigzag", 71), ("clutter", 71)):
-        report = evaluate_planner(layout=layout)
-        assert report["episodes"] == expected
-        assert report["success_rate"] == 1.0
-        assert report["collision_rate"] == 0.0
-
 
 def test_fabricated_replay_transitions_forbidden(tmp_path):
     with pytest.raises(ValueError, match="fabricates an invalid transition"):

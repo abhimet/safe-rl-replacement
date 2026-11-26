@@ -1,0 +1,26 @@
+{
+  "steps": 50000,
+  "pool_size": 100,
+  "collision_feedback": true,
+  "seeds": [
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51
+  ],
+  "methods": [
+    "unshielded",
+    "random_safe",
+    "highest_q",
+    "value_penalty",
+    "adaptive_mix",
+    "fabr",
+    "fabr_fixed"
+  ]
+}
