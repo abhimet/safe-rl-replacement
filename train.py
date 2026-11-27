@@ -8,7 +8,8 @@ Every method uses the same configuration; only the shield's replacement rule
   cannot resemble any evaluation map. A random map is drawn each episode, and
   starts cycle through every reachable cell of that map.
 * Observation: agent position, goal position and the 10x10 wall grid (104 inputs).
-* Network: SpatialQNetwork, Double DQN, one gradient update per environment step.
+* Network: SpatialQNetwork (default) or ConvQNetwork (--architecture conv), Double DQN,
+  one gradient update per environment step.
 * Shielded methods bootstrap only through safe actions (the target's next
   action is chosen among the actions the shield allows).
 * --feedback-mode decides what a shielded agent stores about a blocked proposal
@@ -25,8 +26,10 @@ Every method uses the same configuration; only the shield's replacement rule
   --no-collision-feedback flag and collision_feedback= argument still work as
   aliases for none / cf.
 * --n-step n uses n-step returns (default 1). The counterfactual stays 1-step.
-* Potential-based reward shaping from the map's shortest-path distances.
-  Shaping preserves the optimal policy and is used for training only.
+* Potential-based reward shaping F = gamma * Phi(s') - Phi(s), Phi(terminal) = 0, where d is
+  the BFS shortest-path distance to the goal around walls (GridWorld.distances_to_goal):
+  Phi(s) = -scale * d(s) / d_max by default, or Phi(s) = -d(s) with --shaping distance.
+  It preserves the optimal policy and is used for training only.
 
 Usage:
     python train.py --method fabr --steps 50000 --seed 42 --output results/runs/fabr_seed42
@@ -53,15 +56,27 @@ TRAIN_LAYOUTS = ("rooms", "zigzag")
 COLLISION_REWARD = -10.0
 
 
-def potential(distances, position, scale):
-    """Phi(s) = -scale * distance_to_goal / max_distance, in [-scale, 0]."""
-    return -float(scale) * distances[tuple(position)] / max(distances.values())
+SHAPING = ("normalized", "distance")
 
 
-def shaping_bonus(distances, position, next_position, done, gamma, scale):
+def potential(distances, position, scale, shaping="normalized"):
+    """Phi(s) from the BFS shortest-path distance d(s) to the goal (around walls).
+
+    normalized: Phi = -scale * d(s) / d_max, in [-scale, 0] (the default; v1 and round 1)
+    distance:   Phi = -d(s)
+    """
+    d = distances[tuple(position)]
+    if shaping == "normalized":
+        return -float(scale) * d / max(distances.values())
+    if shaping == "distance":
+        return -float(d)
+    raise ValueError(f"shaping must be one of {SHAPING}")
+
+
+def shaping_bonus(distances, position, next_position, done, gamma, scale, shaping="normalized"):
     """F = gamma * Phi(s') - Phi(s), with Phi(terminal) = 0."""
-    after = 0.0 if done else potential(distances, next_position, scale)
-    return gamma * after - potential(distances, position, scale)
+    after = 0.0 if done else potential(distances, next_position, scale, shaping)
+    return gamma * after - potential(distances, position, scale, shaping)
 
 
 def resolve_feedback_mode(method, feedback_mode=None, collision_feedback=None):
@@ -133,13 +148,15 @@ def train(method="fabr", steps=50000, seed=42, output="results/run", pool_size=1
           window=100, penalty=1.0, lr=1e-4, beta_min=0.0, beta_max=4.0, fixed_beta=None,
           shaping_scale=4.0, epsilon_fraction=0.8, collision_feedback=None, feedback_mode=None,
           n_step=1, capacity=10000, margin=1.0, margin_lambda=0.5, margin_stop_grad=False,
-          protocol_sha256=None, verbose=True):
+          architecture="spatial", shaping="normalized", protocol_sha256=None, verbose=True):
     if method not in METHODS:
         raise ValueError(f"Unknown method {method!r}; choose from {METHODS}")
     if steps < 1:
         raise ValueError("steps must be positive")
     if not 0 < epsilon_fraction <= 1:
         raise ValueError("epsilon_fraction must be in (0, 1]")
+    if shaping not in SHAPING:
+        raise ValueError(f"shaping must be one of {SHAPING}")
     mode = resolve_feedback_mode(method, feedback_mode, collision_feedback)
     shielded = method != "unshielded"
 
@@ -159,7 +176,7 @@ def train(method="fabr", steps=50000, seed=42, output="results/run", pool_size=1
                           stop_grad=margin_stop_grad) if method in MARGIN_METHODS else None)
     agent = DQNAgent(input_dim=maps[0][1].observation_dim, seed=seed, lr=lr, capacity=capacity,
                      backup_mode="shield_safe" if shielded else "standard",
-                     margin_config=margin_config)
+                     margin_config=margin_config, architecture=architecture)
     nstep = NStep(n_step, agent.gamma)
     replacer = Replacer(method, replace_rng, window=window, beta_min=beta_min,
                         beta_max=beta_max, fixed_beta=fixed_beta)
@@ -190,7 +207,7 @@ def train(method="fabr", steps=50000, seed=42, output="results/run", pool_size=1
             total += 1
             # Truncation (time limit) is not a terminal MDP state: keep bootstrapping.
             train_reward = reward + shaping_bonus(distances[index], position, env.position,
-                                                  terminated, agent.gamma, shaping_scale)
+                                                  terminated, agent.gamma, shaping_scale, shaping)
             if method == "value_penalty" and intervened:
                 train_reward -= penalty
             next_safe = env.safe_actions() if shielded and not terminated else None
@@ -205,7 +222,7 @@ def train(method="fabr", steps=50000, seed=42, output="results/run", pool_size=1
             if intervened and mode == "cf":
                 # Known outcome of the blocked proposal in this deterministic grid (ORACLE).
                 cf_reward = COLLISION_REWARD + shaping_bonus(
-                    distances[index], position, position, True, agent.gamma, shaping_scale)
+                    distances[index], position, position, True, agent.gamma, shaping_scale, shaping)
                 agent.remember(obs, proposed, cf_reward, obs, True, None)
             agent.learn()
 
@@ -236,6 +253,12 @@ def train(method="fabr", steps=50000, seed=42, output="results/run", pool_size=1
     torch.save(agent.online.state_dict(), out / f"{prefix}.pt")
 
     completed = [r for r in rows if not r["budget_cut"]]
+    # Goal-reached rate near the end of training (episodes ending in the last 10% of steps):
+    # the epsilon-greedy policy with the shield on (if shielded), close to its final form.
+    final = [r for r in completed if r["env_steps"] > 0.9 * steps]
+    training = summarize(completed) if completed else None
+    if training is not None:
+        training["final_success_rate"] = summarize(final)["success_rate"] if final else None
     summary = {
         "method": method, "seed": seed, "steps": total, "episodes": len(completed),
         "config": dict(pool_size=pool_size, pool_seed=pool_seed, window=window, penalty=penalty,
@@ -244,17 +267,17 @@ def train(method="fabr", steps=50000, seed=42, output="results/run", pool_size=1
                        feedback_mode=mode, collision_feedback=mode == "cf",
                        n_step=n_step, capacity=capacity, margin=margin,
                        margin_lambda=margin_lambda, margin_stop_grad=margin_stop_grad,
-                       training_maps=len(maps)),
+                       architecture=architecture, shaping=shaping, training_maps=len(maps)),
         "protocol_sha256": protocol_sha256,
         "mean_beta": float(np.mean(betas)) if betas else None,
-        "training": summarize(completed) if completed else None,
+        "training": training,
         "torch_version": torch.__version__,
     }
     (out / f"{prefix}_summary.json").write_text(json.dumps(summary, indent=2))
     if verbose:
         t = summary["training"] or {}
         print(f"[{method}@{mode} seed={seed}] {total} steps, {len(completed)} episodes, "
-              f"train success={t.get('success_rate', 0):.3f} collision={t.get('collision_rate', 0):.3f} "
+              f"train success={t.get('success_rate', 0):.3f} (last 10%: {t.get('final_success_rate') or 0:.3f}) collision={t.get('collision_rate', 0):.3f} "
               f"interventions/step={t.get('intervention_rate', 0):.3f}"
               + (f" mean beta={summary['mean_beta']:.2f}" if betas else ""), flush=True)
     return summary
@@ -282,4 +305,8 @@ if __name__ == "__main__":
     p.add_argument("--margin-lambda", type=float, default=0.5, help="fabr_v2 margin-loss weight")
     p.add_argument("--margin-stop-grad", action="store_true",
                    help="fabr_v2: no gradient through the max over safe actions")
+    p.add_argument("--architecture", choices=("spatial", "conv", "mlp"), default="spatial",
+                   help="Q-network: spatial-feature MLP (default) or convolutional")
+    p.add_argument("--shaping", choices=SHAPING, default="normalized",
+                   help="potential: -scale*d/d_max (normalized, default) or -d (distance)")
     train(**vars(p.parse_args()))

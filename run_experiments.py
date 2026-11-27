@@ -51,7 +51,10 @@ TUNING_GROUPS = ("familiar", "dev_clutter")
 LAYOUTS = tuple(layout for names in GROUPS.values() for layout in names)
 METRICS = ("success_rate", "collision_rate", "timeout_rate", "average_reward",
            "greedy_unsafe_state_rate", "unsafe_proposal_rate", "average_steps")
-TRAINING_METRICS = ("success_rate", "collision_rate", "intervention_rate", "unsafe_proposal_rate")
+# Training metrics (shield on for shielded methods). success_rate = goal-reached rate over all
+# training episodes; final_success_rate = over episodes ending in the last 10% of steps.
+TRAINING_METRICS = ("success_rate", "final_success_rate", "collision_rate", "intervention_rate",
+                    "unsafe_proposal_rate")
 # Paired metrics and their sign: +1 = higher is better.
 PAIRED_METRICS = (("success_rate", 1), ("collision_rate", -1), ("timeout_rate", -1),
                   ("average_reward", 1), ("greedy_unsafe_state_rate", -1))
@@ -136,7 +139,8 @@ def group_rows(identity, seed, summary, result):
     """
     if isinstance(identity, str):
         identity = {"method": identity}
-    training = {f"train_{k}": summary["training"][k] for k in TRAINING_METRICS}
+    training = {f"train_{k}": "" if summary["training"].get(k) is None else summary["training"][k]
+                for k in TRAINING_METRICS}
     rows = []
     for group, layouts in [*((name, (name,)) for name in LAYOUTS), *GROUPS.items()]:
         parts = [result[f"layout={name}"] for name in layouts]
@@ -202,13 +206,21 @@ def write_csv(path, rows):
 def print_table(agg):
     key = identity_columns(agg)[0]
     groups = list(GROUPS)
-    print("\nShield-OFF success / collision (mean over seeds; * = used for tuning)")
+
+    def pct(row, metric):
+        value = row.get(f"{metric}_mean", "")
+        return "   -" if value == "" else f"{float(value):4.0%}"
+
+    print("\nShield-OFF success / collision (mean over seeds; * = used for tuning), and the "
+          "training goal-reached rate (all episodes / last 10% of steps)")
     print(f"{key:<26}{'seeds':>6}" + "".join(
-        f"{g + ('*' if g in TUNING_GROUPS else ''):>22}" for g in groups))
+        f"{g + ('*' if g in TUNING_GROUPS else ''):>22}" for g in groups) + f"{'train goal':>16}")
     for name in dict.fromkeys(r[key] for r in agg):
         cells = {r["group"]: r for r in agg if r[key] == name}
-        print(f"{name:<26}{cells[groups[0]]['seeds']:>6}" + "".join(
-            f"{cells[g]['success_rate_mean']:>13.3f} / {cells[g]['collision_rate_mean']:.3f}" for g in groups))
+        first = cells[groups[0]]
+        print(f"{name:<26}{first['seeds']:>6}" + "".join(
+            f"{cells[g]['success_rate_mean']:>13.3f} / {cells[g]['collision_rate_mean']:.3f}" for g in groups)
+            + f"{pct(first, 'train_success_rate'):>10} / {pct(first, 'train_final_success_rate')}")
 
 
 def write_tables(root, rows, references):

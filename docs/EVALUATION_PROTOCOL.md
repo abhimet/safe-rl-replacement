@@ -57,6 +57,9 @@ python run_experiments.py --protocol configs/final_protocol.json --tier core --j
 python evaluate.py --model <checkpoint.pt> --output results/eval.csv
 python evaluate.py --model <checkpoint.pt> --split heldout --family random
 
+# Exact reproduction of every reported episode from the shipped checkpoints (docs/results/v2/core)
+python reproduce.py verify
+
 # Confirm the scenario files are unchanged
 python make_eval_scenarios.py --check
 python make_eval_scenarios.py --version 2 --check

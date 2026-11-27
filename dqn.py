@@ -69,16 +69,69 @@ class SpatialQNetwork(nn.Module):
         return values[0] if one else values
 
 
+class ConvQNetwork(nn.Module):
+    """Convolutional Q-network on the map observation.
+
+    The observation (agent, goal, wall grid) becomes three 10x10 planes: walls, agent (one-hot)
+    and goal (one-hot). The wall plane is padded with walls (value 1) so the grid edge looks like
+    a wall, then two 3x3 convolutions and an MLP head give the 4 action values. Nothing is masked.
+    """
+
+    def __init__(self, input_dim=104, channels=(16, 32), hidden=128):
+        super().__init__()
+        cells = input_dim - 4
+        size = int(cells ** .5)
+        if size < 2 or size * size != cells:
+            raise ValueError("conv network needs a map observation (4 + square grid)")
+        self.size, self.input_dim = size, input_dim
+        c1, c2 = channels
+        self.conv = nn.Sequential(nn.Conv2d(3, c1, 3), nn.ReLU(),            # (size+2)^2 -> size^2
+                                  nn.Conv2d(c1, c2, 3, padding=1), nn.ReLU())
+        self.head = nn.Sequential(nn.Linear(c2 * cells, hidden), nn.ReLU(), nn.Linear(hidden, 4))
+
+    def planes(self, x):
+        b, size = x.shape[0], self.size
+
+        def cell(i):
+            return (x[:, i] * (size - 1)).round().long().clamp(0, size - 1)
+
+        agent = F.one_hot(cell(0) * size + cell(1), size * size).to(x.dtype).reshape(b, 1, size, size)
+        goal = F.one_hot(cell(2) * size + cell(3), size * size).to(x.dtype).reshape(b, 1, size, size)
+        walls = x[:, 4:].reshape(b, 1, size, size)
+        return torch.cat((F.pad(walls, (1, 1, 1, 1), value=1.0), F.pad(agent, (1, 1, 1, 1)),
+                          F.pad(goal, (1, 1, 1, 1))), dim=1)
+
+    def forward(self, observation):
+        one = observation.ndim == 1
+        x = observation.unsqueeze(0) if one else observation
+        if x.shape[1] != self.input_dim:
+            raise ValueError(f"expected {self.input_dim} observation features, got {x.shape[1]}")
+        values = self.head(self.conv(self.planes(x)).flatten(1))
+        return values[0] if one else values
+
+
+ARCHITECTURES = ("spatial", "conv", "mlp")
+
+
 def create_network(input_dim, architecture="spatial"):
     if architecture == "mlp":
         return QNetwork(input_dim)
     if architecture == "spatial":
         return SpatialQNetwork(input_dim)
+    if architecture == "conv":
+        return ConvQNetwork(input_dim)
     raise ValueError(f"Unknown architecture: {architecture}")
 
 
 def network_from_weights(weights):
     """Rebuild the right network type from a saved state_dict."""
+    if "conv.0.weight" in weights:
+        c1, c2 = int(weights["conv.0.weight"].shape[0]), int(weights["conv.2.weight"].shape[0])
+        cells = int(weights["head.0.weight"].shape[1]) // c2
+        model = ConvQNetwork(4 + cells, (c1, c2), int(weights["head.0.weight"].shape[0]))
+        model.load_state_dict(weights)
+        model.eval()
+        return model
     dim = int(weights["net.0.weight"].shape[1])
     area = (dim - 31) // 3  # spatial first layer has 31 + 3 * area inputs
     side = int(area ** .5) if area > 0 else 0

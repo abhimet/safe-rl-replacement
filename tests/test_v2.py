@@ -290,7 +290,8 @@ def test_tuning_selection_rules(tmp_path, monkeypatch):
                 - 0.05 * kw["margin_stop_grad"]
         split = {"success_rate": familiar, "collision_rate": 0.0}
         return {"split=train": split, "split=dev_inspected": split,
-                "overall": {"success_rate": score, "collision_rate": 0.0}}
+                "overall": {"success_rate": score, "collision_rate": 0.0},
+                "training": {"success_rate": 0.5, "final_success_rate": 0.6}}
 
     monkeypatch.setattr(tune, "run_trial", fake)
     tuner = tune.Tuner(jobs=1, root=tmp_path / "tuning", report=tmp_path / "TUNING.md")
@@ -305,6 +306,110 @@ def test_tuning_selection_rules(tmp_path, monkeypatch):
     assert len(trials) == 6 and len([r for r in tuner.log if r["stage"] == "value_penalty"]) == 6
     assert sum(r.get("chosen", False) for r in trials) == 1
     assert "lambda=0.5,m=2" in (tmp_path / "TUNING.md").read_text()
+
+
+@pytest.mark.parametrize("gain,kept", [(0.03, True), (0.01, False)])
+def test_round2_keeps_conv_only_for_a_2pp_dev_gain(tmp_path, monkeypatch, gain, kept):
+    import tune
+    round1 = tmp_path / "round1"
+    round1.mkdir()
+    first = {"train": {"lr": 1e-4, "n_step": 3, "capacity": 10000, "epsilon_fraction": 0.8, "pool_size": 100,
+                       "pool_seed": 7, "shaping_scale": 4.0, "window": 100}, "steps": 100000,
+             "value_penalty": {"penalty": 10.0}, "fabr_v2": {"margin": 1.0, "margin_lambda": 0.1,
+                                                             "margin_stop_grad": False}}
+    (round1 / "selected.json").write_text(json.dumps(first))
+    (round1 / "log.json").write_text(json.dumps([{"stage": "nav", "trial": "baseline", "familiar_success": 0,
+                                                  "clutter_success": 0, "dev_success": 0, "dev_collision": 0,
+                                                  "dev_score": 0}]))
+    seen = []
+
+    def fake(directory, method, seed, kw):
+        seen.append((method, kw))
+        dev = 0.20 + gain * (kw.get("architecture") == "conv") + 0.01 * (kw.get("shaping") == "distance")
+        split = {"success_rate": dev, "collision_rate": 0.0}
+        return {"split=train": split, "split=dev_inspected": split,
+                "overall": {"success_rate": dev, "collision_rate": 0.0},
+                "training": {"success_rate": 0.5, "final_success_rate": 0.7}}
+
+    monkeypatch.setattr(tune, "run_trial", fake)
+    report = tmp_path / "TUNING.md"
+    tuner = tune.Tuner(jobs=1, root=tmp_path / "r2", report=report, round=2, round1=round1)
+    for stage in tune.ROUND_STAGES[2]:
+        getattr(tuner, stage)()
+    assert (tuner.selected["train"].get("architecture") == "conv") == kept
+    assert "shaping" not in tuner.selected["train"]  # +1 pp is below the 2 pp rule
+    phi = [kw for m, kw in seen if m == "highest_q" and kw.get("shaping") == "distance"]
+    assert phi and all((kw.get("architecture") == "conv") == kept for kw in phi)  # tested on the winner
+    assert tuner.selected["steps"] == 100000 and tuner.selected["train"]["n_step"] == 3
+    # the method grids run at the chosen navigation settings, with the same sizes as round 1
+    for method in ("value_penalty", "fabr_v2"):
+        runs = [kw for m, kw in seen if m == method]
+        assert len(runs) == 12 and all((kw.get("architecture") == "conv") == kept for kw in runs)
+    assert all(kw["feedback_mode"] == "cf" for m, kw in seen if m == "highest_q")
+    text = report.read_text()
+    assert "# Round 1" in text and "# Round 2" in text and "0.500 / 0.700" in text
+    proposed = tmp_path / "proposed.json"
+    tune.write_protocol(tuner.selected, proposed, source=ROOT / "configs" / "final_protocol.json", version=2)
+    new = json.loads(proposed.read_text())
+    assert new["frozen"] is False and new["version"] == 2
+    assert (new["train"].get("architecture") == "conv") == kept
+    load_protocol(proposed)
+
+
+def test_round2_refuses_to_overwrite_a_frozen_protocol(tmp_path):
+    import tune
+    frozen = tmp_path / "frozen.json"
+    frozen.write_text(json.dumps({**json.loads((ROOT / "configs" / "final_protocol.json").read_text()),
+                                  "frozen": True}))
+    selected = json.loads((ROOT / "docs" / "tuning" / "selected.json").read_text())
+    with pytest.raises(RuntimeError):
+        tune.write_protocol(selected, frozen)
+
+
+def test_distance_potential_uses_bfs_distance():
+    from train import potential, shaping_bonus
+    env = GridWorld(layout="rooms")
+    d = env.distances_to_goal()
+    far = max(d, key=d.get)
+    assert potential(d, far, 4.0, "distance") == -d[far]
+    assert potential(d, far, 4.0) == pytest.approx(-4.0)
+    closer = next(n for n in d if d[n] == d[far] - 1 and abs(n[0] - far[0]) + abs(n[1] - far[1]) == 1)
+    assert shaping_bonus(d, far, closer, False, 0.99, 4.0, "distance") == pytest.approx(
+        0.99 * -(d[far] - 1) + d[far])
+    with pytest.raises(ValueError):
+        potential(d, far, 4.0, "euclidean")
+
+
+# ---- convolutional Q-network and training goal-reached rate ----
+
+def test_conv_network_shapes_checkpoint_and_rollout(tmp_path):
+    from dqn import ConvQNetwork, create_network, network_from_weights
+    net = create_network(104, "conv")
+    assert isinstance(net, ConvQNetwork) and net.input_dim == 104
+    env = GridWorld(layout="rooms", observation_mode="map")
+    obs, _ = env.reset(options={"start": (0, 0)})
+    x = torch.as_tensor(obs)
+    assert net(x).shape == (4,) and net(torch.stack([x, x])).shape == (2, 4)
+    planes = net.planes(x.unsqueeze(0))
+    assert planes.shape == (1, 3, 12, 12)
+    assert planes[0, 0, 0].sum() == 12 and planes[0, 1, 1, 1] == 1 and planes[0, 2, 10, 10] == 1  # border, agent, goal
+    rebuilt = network_from_weights(net.state_dict())
+    assert isinstance(rebuilt, ConvQNetwork) and torch.allclose(rebuilt(x), net(x))
+    row, _ = rollout(rebuilt, env, (0, 0))
+    assert row["success"] + row["collision"] + row["timeout"] == 1
+
+
+def test_conv_training_and_final_goal_rate(tmp_path):
+    summary = tiny("fabr_v2", tmp_path, architecture="conv")
+    assert summary["config"]["architecture"] == "conv"
+    weights = torch.load(tmp_path / "fabr_v2_seed0.pt")
+    assert "conv.0.weight" in weights
+    training = summary["training"]
+    assert "final_success_rate" in training
+    assert training["final_success_rate"] is None or 0 <= training["final_success_rate"] <= 1
+    assert run_matches(summary, "fabr_v2", {"steps": 150, "pool_size": 3, "architecture": "conv",
+                                            "feedback_mode": "margin"})
+    assert not run_matches(summary, "fabr_v2", {"steps": 150, "pool_size": 3, "feedback_mode": "margin"})
 
 
 # ---- frozen protocol ----
@@ -387,6 +492,19 @@ def test_protocol_is_the_only_source_of_run_settings(small_protocol):
     assert {"greedy_unsafe_state_rate", "average_reward", "timeout_rate"} <= metrics
 
 
+def test_determinism_check_retrains_identically(small_protocol, tmp_path, monkeypatch):
+    import importlib.util
+    root, path, protocol = small_protocol
+    out = root / "det"
+    run_protocol(path, "t", out, seeds=[1])
+    spec = importlib.util.spec_from_file_location("check_determinism", ROOT / "cluster" / "check_determinism.py")
+    check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(check)
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    assert check.main(["--protocol", str(path), "--results", str(out), "--tier", "t",
+                       "--runs", "fabr_v2@margin:1", "unshielded:1"]) == 0
+
+
 def test_changed_protocol_refuses_to_reuse_runs(small_protocol):
     root, path, protocol = small_protocol
     changed = root / "changed.json"
@@ -413,6 +531,19 @@ def test_legacy_summaries_still_match():
 
 
 # ---- reproduce.py ----
+
+def test_verify_is_exact_except_last_bits_of_float_averages():
+    import reproduce
+    stored = {"model": "a", "scenario_version": 2, "overall": {"success_rate": 0.25, "average_reward": -9.981755593803792,
+                                        "average_steps": 40.0}}
+    same = {"model": "b", "scenario_version": 2,
+            "overall": {**stored["overall"], "average_reward": -9.981755593803786}}
+    assert reproduce.summary_mismatches(stored, same) == []          # ~6e-15: summation order only
+    worse = {"scenario_version": 2, "overall": {**same["overall"], "success_rate": 0.2525}}
+    assert reproduce.summary_mismatches(stored, worse) == ["overall:success_rate"]
+    far = {"scenario_version": 3, "overall": {**stored["overall"], "average_reward": -9.98}}
+    assert reproduce.summary_mismatches(stored, far) == ["scenario_version", "overall:average_reward"]
+
 
 def test_reproduce_refuses_a_draft_protocol_and_unknown_commands():
     import reproduce

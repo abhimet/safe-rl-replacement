@@ -1,0 +1,79 @@
+[
+  {
+    "stage": "nav_r2",
+    "trial": "round1",
+    "method": "highest_q",
+    "settings": {
+      "lr": 0.0001,
+      "n_step": 3,
+      "capacity": 10000,
+      "epsilon_fraction": 0.8,
+      "pool_size": 100,
+      "pool_seed": 7,
+      "shaping_scale": 4.0,
+      "window": 100,
+      "steps": 100000,
+      "feedback_mode": "cf"
+    },
+    "familiar_success": 0.3290322580645161,
+    "clutter_success": 0.21830985915492956,
+    "dev_success": 0.2942477876106195,
+    "dev_collision": 0.0,
+    "dev_score": 0.2942477876106195,
+    "train_success": 0.4786264378573998,
+    "train_final_success": 0.35601411892478957,
+    "chosen": true
+  },
+  {
+    "stage": "nav_r2",
+    "trial": "round1+conv",
+    "method": "highest_q",
+    "settings": {
+      "lr": 0.0001,
+      "n_step": 3,
+      "capacity": 10000,
+      "epsilon_fraction": 0.8,
+      "pool_size": 100,
+      "pool_seed": 7,
+      "shaping_scale": 4.0,
+      "window": 100,
+      "steps": 100000,
+      "feedback_mode": "cf",
+      "architecture": "conv"
+    },
+    "familiar_success": 0.12258064516129032,
+    "clutter_success": 0.0,
+    "dev_success": 0.084070796460177,
+    "dev_collision": 0.13716814159292035,
+    "dev_score": -0.05309734513274336,
+    "train_success": 0.43192531443013743,
+    "train_final_success": 0.37943262411347517,
+    "chosen": false
+  },
+  {
+    "stage": "nav_r2",
+    "trial": "round1+phi_distance",
+    "method": "highest_q",
+    "settings": {
+      "lr": 0.0001,
+      "n_step": 3,
+      "capacity": 10000,
+      "epsilon_fraction": 0.8,
+      "pool_size": 100,
+      "pool_seed": 7,
+      "shaping_scale": 4.0,
+      "window": 100,
+      "steps": 100000,
+      "feedback_mode": "cf",
+      "shaping": "distance"
+    },
+    "familiar_success": 0.025806451612903226,
+    "clutter_success": 0.0,
+    "dev_success": 0.017699115044247787,
+    "dev_collision": 0.0,
+    "dev_score": 0.017699115044247787,
+    "train_success": 0.43406582435574886,
+    "train_final_success": 0.32475817458904516,
+    "chosen": false
+  }
+]

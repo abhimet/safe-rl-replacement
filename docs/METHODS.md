@@ -34,16 +34,17 @@ more than 50% (Jaccard), so no evaluation geometry leaks into training.
 ## Shared training configuration (`train.py`, `configs/final_protocol.json`)
 
 Every method uses the same configuration, budget and seeds. Final values come only from the
-frozen protocol file. The table shows the v1 defaults; tuned values are in the protocol and in
-[TUNING.md](TUNING.md).
+frozen protocol file (`configs/final_protocol.json`, frozen 2026-11-26). The table shows the final
+values; [TUNING.md](TUNING.md) lists every alternative tried.
 
-| Setting | Value |
+| Setting | Final value (v1 value if different) |
 |---|---|
-| Algorithm | Double DQN, Huber loss, Adam (lr 1e-4 in v1), γ = 0.99, batch 64, replay 10,000 in v1, target sync every 100 updates, gradient clip 10 |
-| Returns | n-step (n = 1 in v1). An n-step transition stores Σ γ^i r_i and bootstraps with γ^k from the state k ≤ n steps later. Partial returns are flushed at episode end; a timeout still bootstraps |
-| Network | `SpatialQNetwork`: the 104 inputs plus one-hot agent and goal planes, the 5×5 wall patch around the agent and the goal offset; two hidden layers of 128 |
-| Exploration | ε-greedy, linear from 1.0 to 0.05 over the first `epsilon_fraction` (0.8 in v1) of the step budget |
-| Reward shaping | Potential-based, Φ(s) = −4 · d(s)/d_max with shortest-path distance d. It leaves the optimal policy unchanged and is used for training only; evaluation uses the raw reward |
+| Algorithm | Double DQN, Huber loss, Adam lr 1e-4, γ = 0.99, batch 64, replay 10,000, target sync every 100 updates, gradient clip 10 |
+| Budget | 100,000 environment steps (v1: 50,000) |
+| Returns | **n-step, n = 3** (v1: 1). An n-step transition stores Σ γ^i r_i and bootstraps with γ^k from the state k ≤ n steps later. Partial returns are flushed at episode end; a timeout still bootstraps |
+| Network | `SpatialQNetwork`: the 104 inputs plus one-hot agent and goal planes, the 5×5 wall patch around the agent and the goal offset; two hidden layers of 128. (A `ConvQNetwork` option, below, was tried and not kept) |
+| Exploration | ε-greedy, linear from 1.0 to 0.05 over the first 80% of the step budget |
+| Reward shaping | Potential-based, F = γΦ(s′) − Φ(s), Φ(terminal) = 0, with **Φ(s) = −4 · d(s)/d_max**. d is the BFS shortest-path distance to the goal around walls (`GridWorld.distances_to_goal`), and d_max is the largest d on that map. It leaves the optimal policy unchanged and is used for training only; evaluation uses the raw reward. (Φ = −d was tried and not kept) |
 | Shield-safe bootstrap (shielded methods) | The next-state action in the target is chosen only among safe actions |
 
 The unshielded baseline has no shield, so it gets no shield-derived signal. All shielded methods
@@ -120,6 +121,17 @@ It never switches off: it keeps pulling Q(s, a_prop) to *exactly* m below the be
 pushing it up as well as down. The loss is bounded, so the ablation isolates the hinge's
 switch-off behaviour instead of comparing against a diverging loss.
 
+### Options tried in tuning round 2 (not used in the final runs)
+
+- **`ConvQNetwork`** (`--architecture conv`): the observation becomes three 10×10 planes (walls,
+  agent, goal). The wall plane is padded with walls so the grid edge looks like a wall. Then come
+  two 3×3 convolutions (16 and 32 channels, ReLU) and an MLP head (128) over the 4 actions. The
+  safe-action mask is unchanged. On dev maps it lowered highest_q@cf dev success from 29.4% to 8.4%,
+  and it trains about 5–8× slower.
+- **Φ = −d** (`--shaping distance`): the same BFS distance, without the 4/d_max scaling, so one
+  step toward the goal is worth about 1 instead of about 0.2–0.4. On dev maps it lowered dev
+  success to 1.8%.
+
 ## Tuning and the frozen protocol
 
 - `tune.py` tunes on **development maps only**: the train split (rooms, zigzag = *familiar*)
@@ -130,6 +142,13 @@ switch-off behaviour instead of comparing against a diverging loss.
   - **budget**: 100k steps, or 150k if 100k gives < 50% familiar success and 150k adds ≥ 5 pp;
   - **method settings**: the best mean (success − collision) over dev episodes.
 - Every config tried is listed in [TUNING.md](TUNING.md).
+- **Round 1** (MacBook): navigation (familiar success), budget, and the value_penalty and fabr_v2
+  grids.
+- **Round 2** (Zaratan): one navigation-improvement round on top of round 1. It tried the conv
+  network, then Φ = −d on the winner, keeping a change only if dev success rose ≥ 2 pp. Dev success
+  is round 1's definition: familiar + clutter pooled, 226 episodes per seed, mean over seeds.
+  Neither change was kept. Round 1's method grids had already run at exactly these settings, so
+  they were not re-run.
 - The chosen values are written to `configs/final_protocol.json` together with the tiers, the
   seeds, the scenario file's sha256 and the metric list. The file is then frozen.
 - `run_experiments.py --protocol` takes no training flags. Each run records the protocol's sha256,
@@ -149,13 +168,23 @@ Each final checkpoint is run greedily with the **shield off**, once from every r
 
 † Used for tuning: not held-out evidence.
 
+**Reproducibility.** The final runs were trained on UMD's Zaratan cluster.
+- Retraining a run there gives a bit-identical CSV, checkpoint and evaluation
+  (`cluster/check_determinism.py`).
+- `reproduce.py verify` re-evaluates the shipped checkpoints on any machine. All 63,910 episodes
+  matched exactly on an M1 Mac.
+
 `run_experiments.py` reports, per group:
 
 - success, collision and timeout rate;
 - **mean episode reward** (raw, unshaped);
 - **greedy unsafe-state rate**: the fraction of reachable states (= the scenario starts) where
   the greedy action, shield off, would hit a wall or leave the grid;
-- the per-step unsafe-proposal rate.
+- the per-step unsafe-proposal rate;
+- **training goal-reached rate**: the share of training episodes that reach the goal (shield on,
+  ε-greedy, for shielded methods), over all of training and over the last 10% of steps. Comparing
+  it with shield-off success separates "never learned to reach the goal" from "learned it, but
+  only with the shield".
 
 Each is the mean over seeds with a 95% t-interval. `paired.csv` gives `fabr_v2@margin` minus every
 config, and `fabr@<mode>` minus every config of that mode. Differences are paired by seed, with

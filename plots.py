@@ -23,7 +23,7 @@ from run_experiments import GROUPS, TUNING_GROUPS  # noqa: E402
 COLORS = {"fabr": "#257de0", "highest_q": "#f47230", "random_safe": "#00b894",
           "adaptive_mix": "#f2a600", "value_penalty": "#ee7fac", "unshielded": "#008a17",
           "fabr_fixed": "#6a4ce2", "fabr_v2": "#0b3c8c", "fabr_v2_fixedtarget": "#7fb2f0"}
-LABELS = {"fabr": "FABR (ours)", "fabr_fixed": "FABR fixed-β (ablation)", "highest_q": "Highest-Q",
+LABELS = {"fabr": "FABR v1", "fabr_fixed": "FABR v1 fixed-β (ablation)", "highest_q": "Highest-Q",
           "random_safe": "Random safe", "adaptive_mix": "Adaptive mix",
           "value_penalty": "Value + penalty", "unshielded": "Unshielded",
           "fabr_v2": "FABR v2 (margin)", "fabr_v2_fixedtarget": "FABR v2 fixed-target (ablation)"}
@@ -215,7 +215,7 @@ def beta_trace(results, out):
                        label=f"{label(fixed_name)} (β = {fixed:.2f})")
     ax.set_xlabel("Environment steps")
     ax.set_ylabel("β (inverse temperature)")
-    ax.set_title("FABR adapts β to the agent's unsafe-proposal rate", fontsize=10, color=TEXT, loc="left")
+    ax.set_title("FABR v1 adapts β to the agent's unsafe-proposal rate", fontsize=10, color=TEXT, loc="left")
     ax.grid(color=GRID, linewidth=0.8)
     ax.legend(frameon=False, fontsize=8, loc="lower right")
     fig.savefig(out / "fabr_beta.png")
