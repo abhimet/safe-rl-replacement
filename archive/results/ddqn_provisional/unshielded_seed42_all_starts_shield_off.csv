@@ -1,4 +1,0 @@
-episode,reward,steps,success,collision,unsafe_proposals,interventions,scenario_id,layout,start_row,start_col,reset_seed,method,training_seed,checkpoint
-1,-10.0,100,0,0,0,0,rooms_1,rooms,0,0,0,unshielded,42,results/ddqn_provisional/unshielded_seed42.pt
-2,-10.0,100,0,0,0,0,rooms_2,rooms,0,9,0,unshielded,42,results/ddqn_provisional/unshielded_seed42.pt
-3,-10.0,100,0,0,0,0,rooms_3,rooms,6,0,0,unshielded,42,results/ddqn_provisional/unshielded_seed42.pt

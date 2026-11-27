@@ -1,5 +1,4 @@
-"""Double DQN agent with an optional shield-safe bootstrap target."""
-from collections import deque
+"""Double DQN agent with an optional shield-safe bootstrap target and margin loss."""
 import random
 
 import numpy as np
@@ -70,16 +69,66 @@ class SpatialQNetwork(nn.Module):
         return values[0] if one else values
 
 
+class ConvQNetwork(nn.Module):
+    """Convolutional Q-network on the map observation.
+
+    The observation (agent, goal, wall grid) becomes three 10x10 planes: walls, agent (one-hot)
+    and goal (one-hot). The wall plane is padded with walls (value 1) so the grid edge looks like
+    a wall, then two 3x3 convolutions and an MLP head give the 4 action values. Nothing is masked.
+    """
+
+    def __init__(self, input_dim=104, channels=(16, 32), hidden=128):
+        super().__init__()
+        cells = input_dim - 4
+        size = int(cells ** .5)
+        if size < 2 or size * size != cells:
+            raise ValueError("conv network needs a map observation (4 + square grid)")
+        self.size, self.input_dim = size, input_dim
+        c1, c2 = channels
+        self.conv = nn.Sequential(nn.Conv2d(3, c1, 3), nn.ReLU(),            # (size+2)^2 -> size^2
+                                  nn.Conv2d(c1, c2, 3, padding=1), nn.ReLU())
+        self.head = nn.Sequential(nn.Linear(c2 * cells, hidden), nn.ReLU(), nn.Linear(hidden, 4))
+
+    def planes(self, x):
+        b, size = x.shape[0], self.size
+
+        def cell(i):
+            return (x[:, i] * (size - 1)).round().long().clamp(0, size - 1)
+
+        agent = F.one_hot(cell(0) * size + cell(1), size * size).to(x.dtype).reshape(b, 1, size, size)
+        goal = F.one_hot(cell(2) * size + cell(3), size * size).to(x.dtype).reshape(b, 1, size, size)
+        walls = x[:, 4:].reshape(b, 1, size, size)
+        return torch.cat((F.pad(walls, (1, 1, 1, 1), value=1.0), F.pad(agent, (1, 1, 1, 1)),
+                          F.pad(goal, (1, 1, 1, 1))), dim=1)
+
+    def forward(self, observation):
+        one = observation.ndim == 1
+        x = observation.unsqueeze(0) if one else observation
+        if x.shape[1] != self.input_dim:
+            raise ValueError(f"expected {self.input_dim} observation features, got {x.shape[1]}")
+        values = self.head(self.conv(self.planes(x)).flatten(1))
+        return values[0] if one else values
+
+
+ARCHITECTURES = {"spatial": SpatialQNetwork, "conv": ConvQNetwork, "mlp": QNetwork}
+MARGIN_KINDS = ("hinge", "fixed_target")
+
+
 def create_network(input_dim, architecture="spatial"):
-    if architecture == "mlp":
-        return QNetwork(input_dim)
-    if architecture == "spatial":
-        return SpatialQNetwork(input_dim)
-    raise ValueError(f"Unknown architecture: {architecture}")
+    if architecture not in ARCHITECTURES:
+        raise ValueError(f"Unknown architecture: {architecture}")
+    return ARCHITECTURES[architecture](input_dim)
 
 
 def network_from_weights(weights):
     """Rebuild the right network type from a saved state_dict."""
+    if "conv.0.weight" in weights:
+        c1, c2 = int(weights["conv.0.weight"].shape[0]), int(weights["conv.2.weight"].shape[0])
+        cells = int(weights["head.0.weight"].shape[1]) // c2
+        model = ConvQNetwork(4 + cells, (c1, c2), int(weights["head.0.weight"].shape[0]))
+        model.load_state_dict(weights)
+        model.eval()
+        return model
     dim = int(weights["net.0.weight"].shape[1])
     area = (dim - 31) // 3  # spatial first layer has 31 + 3 * area inputs
     side = int(area ** .5) if area > 0 else 0
@@ -92,12 +141,97 @@ def network_from_weights(weights):
     return model
 
 
+class ReplayBuffer:
+    """Fixed-capacity ring buffer of transitions, stored in numpy arrays.
+
+    ``sample`` draws logical indices (0 = oldest) with ``rng.sample(range(len), k)``.
+    That is the same draw ``rng.sample(deque, k)`` makes, so batches match a
+    ``deque(maxlen=capacity)`` buffer exactly.
+    """
+
+    def __init__(self, capacity, state_dim):
+        if capacity < 1:
+            raise ValueError("capacity must be positive")
+        self.capacity, self.size, self.oldest = int(capacity), 0, 0
+        self.states = np.zeros((capacity, state_dim), dtype=np.float32)
+        self.next_states = np.zeros((capacity, state_dim), dtype=np.float32)
+        self.actions = np.zeros(capacity, dtype=np.int64)
+        self.rewards = np.zeros(capacity, dtype=np.float32)
+        self.discounts = np.zeros(capacity, dtype=np.float32)
+        self.dones = np.zeros(capacity, dtype=np.bool_)
+        self.next_masks = np.ones((capacity, 4), dtype=np.bool_)
+        self.proposed = np.zeros(capacity, dtype=np.int64)
+        self.intervened = np.zeros(capacity, dtype=np.bool_)
+        self.safe_masks = np.ones((capacity, 4), dtype=np.bool_)
+
+    def __len__(self):
+        return self.size
+
+    def append(self, state, action, reward, next_state, done, next_mask, discount,
+               proposed, intervened, safe_mask):
+        if self.size < self.capacity:
+            i = self.size
+            self.size += 1
+        else:  # overwrite the oldest entry, like deque(maxlen=...)
+            i = self.oldest
+            self.oldest = (self.oldest + 1) % self.capacity
+        self.states[i], self.actions[i], self.rewards[i] = state, action, reward
+        self.next_states[i], self.dones[i], self.next_masks[i] = next_state, done, next_mask
+        self.discounts[i], self.proposed[i] = discount, proposed
+        self.intervened[i], self.safe_masks[i] = intervened, safe_mask
+
+    def sample(self, rng, k):
+        logical = np.asarray(rng.sample(range(self.size), k), dtype=np.int64)
+        i = (logical + self.oldest) % self.capacity
+        return {name: torch.as_tensor(getattr(self, name)[i]) for name in (
+            "states", "actions", "rewards", "next_states", "dones", "next_masks",
+            "discounts", "proposed", "intervened", "safe_masks")}
+
+
+def action_mask(actions):
+    """Boolean mask of length 4; None means every action is allowed."""
+    mask = np.ones(4, dtype=np.bool_)
+    if actions is not None:
+        mask[:] = False
+        mask[list(actions)] = True
+    return mask
+
+
+def margin_loss(q_all, proposed, safe_mask, intervened, margin, kind="hinge", stop_grad=False):
+    """Large-margin loss on blocked proposals (FABR v2; cf. DQfD, Hester et al. 2018).
+
+    For each intervened sample, d = Q(s, a_prop) - (max_{a in safe(s)} Q(s, a) - margin):
+        kind="hinge"         relu(d): zero once the blocked action sits `margin` below the
+                             best safe action, so the loss switches itself off
+        kind="fixed_target"  d ** 2: bounded and two-sided; keeps pulling Q(s, a_prop) to
+                             exactly `margin` below the best safe action (ablation)
+    Returns the mean over intervened samples (0 if there are none). With stop_grad the
+    max over safe actions is treated as a constant.
+    """
+    if kind not in MARGIN_KINDS:
+        raise ValueError(f"Unknown margin loss kind: {kind}")
+    if not bool(intervened.any()):
+        return q_all.new_zeros(())
+    q = q_all[intervened]
+    q_prop = q.gather(1, proposed[intervened].unsqueeze(1)).squeeze(1)
+    best_safe = q.masked_fill(~safe_mask[intervened], -torch.inf).max(dim=1).values
+    if stop_grad:
+        best_safe = best_safe.detach()
+    d = q_prop - (best_safe - margin)
+    return (F.relu(d) if kind == "hinge" else d.pow(2)).mean()
+
+
 class DQNAgent:
     """Double DQN. With backup_mode='shield_safe' the bootstrap action is chosen
-    only among actions the shield allows in the next state."""
+    only among actions the shield allows in the next state.
+
+    ``margin_config`` = dict(kind, margin, weight, stop_grad) adds
+    ``weight * margin_loss(...)`` to the TD loss (FABR v2); None disables it.
+    """
 
     def __init__(self, input_dim, seed=42, lr=1e-4, gamma=0.99, batch_size=64,
-                 capacity=10000, target_sync=100, backup_mode="standard", architecture="spatial"):
+                 capacity=10000, target_sync=100, backup_mode="standard", architecture="spatial",
+                 margin_config=None):
         if backup_mode not in ("standard", "shield_safe"):
             raise ValueError("backup_mode must be 'standard' or 'shield_safe'")
         self.rng = random.Random(seed)
@@ -106,13 +240,17 @@ class DQNAgent:
         self.target = create_network(input_dim, architecture)
         self.target.load_state_dict(self.online.state_dict())
         self.optimizer = torch.optim.Adam(self.online.parameters(), lr=lr)
-        self.memory = deque(maxlen=capacity)
+        self.memory = ReplayBuffer(capacity, input_dim)
         self.batch_size = batch_size
         self.gamma = gamma
         self.target_sync = target_sync
         self.backup_mode = backup_mode
+        self.margin_config = dict(margin_config) if margin_config else None
+        if self.margin_config and self.margin_config["kind"] not in MARGIN_KINDS:
+            raise ValueError(f"Unknown margin loss kind: {self.margin_config['kind']}")
         self.updates = 0
         self.last_loss = None
+        self.last_margin_loss = None
 
     def q_values(self, observation):
         with torch.no_grad():
@@ -120,41 +258,55 @@ class DQNAgent:
 
     def act(self, observation, epsilon=0.0):
         """Epsilon-greedy proposal (before any shield)."""
-        if self.rng.random() < epsilon:
-            return self.rng.randrange(4)
-        return int(np.argmax(self.q_values(observation)))
+        return self.act_with_q(observation, epsilon)[0]
 
-    def remember(self, state, action, reward, next_state, done, next_safe_actions=None):
+    def act_with_q(self, observation, epsilon=0.0):
+        """(epsilon-greedy proposal, Q-values), with a single forward pass."""
+        q = self.q_values(observation)
+        if self.rng.random() < epsilon:
+            return self.rng.randrange(4), q
+        return int(np.argmax(q)), q
+
+    def remember(self, state, action, reward, next_state, done, next_safe_actions=None,
+                 discount=None, proposed=None, intervened=False, safe_actions=None):
+        """Store one transition. ``discount`` multiplies the bootstrap value (gamma ** n for an
+        n-step return; default gamma). ``proposed``/``intervened``/``safe_actions`` describe the
+        state s and are only used by the margin loss."""
         if self.backup_mode == "shield_safe" and not done and not next_safe_actions:
             raise ValueError("shield_safe backup needs the next state's safe actions")
-        mask = np.ones(4, dtype=np.bool_)
-        if next_safe_actions is not None:
-            mask[:] = False
-            mask[list(next_safe_actions)] = True
-        self.memory.append((np.array(state, copy=True), int(action), float(reward),
-                            np.array(next_state, copy=True), bool(done), mask))
+        if intervened and (proposed is None or safe_actions is None):
+            raise ValueError("an intervened transition needs its proposal and safe actions")
+        self.memory.append(np.asarray(state, dtype=np.float32), int(action), float(reward),
+                           np.asarray(next_state, dtype=np.float32), bool(done),
+                           action_mask(next_safe_actions),
+                           self.gamma if discount is None else float(discount),
+                           int(action if proposed is None else proposed), bool(intervened),
+                           action_mask(safe_actions))
 
     def learn(self):
         if len(self.memory) < self.batch_size:
             return None
-        batch = self.rng.sample(self.memory, self.batch_size)
-        states = torch.as_tensor(np.stack([t[0] for t in batch]), dtype=torch.float32)
-        actions = torch.as_tensor([t[1] for t in batch], dtype=torch.int64).unsqueeze(1)
-        rewards = torch.as_tensor([t[2] for t in batch], dtype=torch.float32)
-        next_states = torch.as_tensor(np.stack([t[3] for t in batch]), dtype=torch.float32)
-        dones = torch.as_tensor([t[4] for t in batch], dtype=torch.bool)
-        masks = torch.as_tensor(np.stack([t[5] for t in batch]), dtype=torch.bool)
+        b = self.memory.sample(self.rng, self.batch_size)
+        states, rewards, next_states, dones = b["states"], b["rewards"], b["next_states"], b["dones"]
+        masks = b["next_masks"]
 
-        current = self.online(states).gather(1, actions).squeeze(1)
+        q_all = self.online(states)
+        current = q_all.gather(1, b["actions"].unsqueeze(1)).squeeze(1)
         with torch.no_grad():
             next_online = self.online(next_states)  # online net picks the action...
             if self.backup_mode == "shield_safe":
                 next_online = next_online.masked_fill(~(masks | dones.unsqueeze(1)), -torch.inf)
             next_actions = next_online.argmax(dim=1, keepdim=True)
             next_values = self.target(next_states).gather(1, next_actions).squeeze(1)  # ...target net values it
-            targets = rewards + self.gamma * next_values * (~dones).float()
+            targets = rewards + b["discounts"] * next_values * (~dones).float()
 
         loss = F.smooth_l1_loss(current, targets)
+        if self.margin_config:
+            c = self.margin_config
+            extra = margin_loss(q_all, b["proposed"], b["safe_masks"], b["intervened"],
+                                c["margin"], c["kind"], c["stop_grad"])
+            self.last_margin_loss = float(extra.item())
+            loss = loss + c["weight"] * extra
         if not torch.isfinite(loss):
             raise RuntimeError("Nonfinite DQN loss")
         self.optimizer.zero_grad()

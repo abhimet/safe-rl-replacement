@@ -1,0 +1,42 @@
+{
+  "method": "fabr",
+  "seed": 47,
+  "steps": 100000,
+  "episodes": 1614,
+  "config": {
+    "pool_size": 100,
+    "pool_seed": 7,
+    "window": 100,
+    "penalty": 1.0,
+    "lr": 0.0001,
+    "beta_min": 0.0,
+    "beta_max": 4.0,
+    "fixed_beta": null,
+    "shaping_scale": 4.0,
+    "epsilon_fraction": 0.8,
+    "feedback_mode": "none",
+    "collision_feedback": false,
+    "n_step": 3,
+    "capacity": 10000,
+    "margin": 1.0,
+    "margin_lambda": 0.5,
+    "margin_stop_grad": false,
+    "architecture": "spatial",
+    "shaping": "normalized",
+    "training_maps": 102
+  },
+  "protocol_sha256": "4289ca72c890944d6072155d679e63e158406d153d5920e82fa36762a27bcc91",
+  "mean_beta": 2.3396556473817243,
+  "training": {
+    "episodes": 1614,
+    "success_rate": 0.5433705080545229,
+    "collision_rate": 0.0,
+    "average_reward": -0.7024163568773232,
+    "average_steps": 61.90458488228005,
+    "unsafe_proposal_rate": 0.25744139960365914,
+    "intervention_rate": 0.25744139960365914,
+    "timeout_rate": 0.4566294919454771,
+    "final_success_rate": 0.43506493506493504
+  },
+  "torch_version": "2.14.1+cpu"
+}

@@ -67,6 +67,6 @@ def test_paired_counts_lower_collision_as_better():
             for m, s, succ, coll in [("fabr", 1, 0.5, 0.1), ("fabr", 2, 0.5, 0.4),
                                      ("highest_q", 1, 0.4, 0.3), ("highest_q", 2, 0.6, 0.3)]]
     out = {r["metric"]: r for r in paired(rows)}
-    assert out["success_rate"]["fabr_better_seeds"] == 1
-    assert out["collision_rate"]["fabr_better_seeds"] == 1
+    assert out["success_rate"]["reference_better_seeds"] == 1
+    assert out["collision_rate"]["reference_better_seeds"] == 1
     assert out["collision_rate"]["mean_diff"] == pytest.approx(-0.05)

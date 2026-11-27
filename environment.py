@@ -11,7 +11,6 @@ except ImportError:
 Base = gym.Env if gym is not None else object
 
 # Map legend: '#' obstacle, 'S' candidate start, 'G' goal, '.' free cell.
-# See environment_settings.md for the rules and shortest-path lengths.
 LAYOUTS = {
     'default_6x6': (
         'S.....',
@@ -85,7 +84,7 @@ LAYOUTS = {
     ),
 }
 DEFAULT_LAYOUTS = {6: 'default_6x6', 10: 'rooms'}
-# Frozen train/held-out split; see layouts.md and evaluation_scenarios.json.
+# v1 train/held-out split, kept for the byte-frozen evaluation_scenarios.json (v1).
 TRAIN_LAYOUTS = ('rooms', 'zigzag')
 HELDOUT_LAYOUTS = ('clutter', 'spiral', 'pillars')
 

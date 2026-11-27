@@ -2,7 +2,9 @@
 
 Evaluation is greedy (argmax Q), with no exploration and the SHIELD OFF: the
 agent executes its own proposals, so a collision ends the episode. There is one
-episode per scenario, each from a forced start cell.
+episode per scenario, each from a forced start cell. Scenarios cover every
+reachable non-goal cell, so ``start_unsafe`` (the greedy action in the start
+state is unsafe) averaged over a layout is the greedy unsafe-state rate.
 
     python evaluate.py --model results/runs/fabr_seed42/fabr_seed42.pt --output results/eval.csv
 """
@@ -35,7 +37,7 @@ def rollout(network, env, start, shield=False):
     Trajectory entries are (position, proposed, executed, intervened).
     """
     obs, _ = env.reset(options={"start": start})
-    trajectory, reward_sum, unsafe, interventions = [], 0.0, 0, 0
+    trajectory, reward_sum, unsafe, interventions, start_unsafe = [], 0.0, 0, 0, None
     info, truncated = {"success": False, "collision": False}, False
     for _ in range(env.max_steps):
         with torch.no_grad():
@@ -46,6 +48,8 @@ def rollout(network, env, start, shield=False):
         if shield and proposed not in safe and safe:
             executed = max(safe, key=lambda a: float(q[a]))
         unsafe += int(proposed not in safe)
+        if start_unsafe is None:
+            start_unsafe = int(proposed not in safe)
         interventions += int(executed != proposed)
         trajectory.append((env.position, proposed, executed, executed != proposed))
         obs, reward, terminated, truncated, info = env.step(executed)
@@ -55,19 +59,24 @@ def rollout(network, env, start, shield=False):
     trajectory.append((env.position, None, None, False))
     row = {"reward": round(reward_sum, 4), "steps": env.steps, "success": int(info["success"]),
            "collision": int(info["collision"]), "timeout": int(truncated),
-           "unsafe_proposals": unsafe, "interventions": interventions}
+           "unsafe_proposals": unsafe, "interventions": interventions,
+           "start_unsafe": start_unsafe}
     return row, trajectory
 
 
-def load_scenarios(path=V2_PATH, split=None, family=None):
+def load_scenarios(path=V2_PATH, split=None, family=None, splits=None):
+    """Scenarios filtered by one split, several splits (``splits``) and/or a family."""
     with open(path, encoding="utf-8") as f:
         spec = json.load(f)
-    if split not in (None, *SPLITS):
-        raise ValueError(f"split must be one of {SPLITS}")
+    if split is not None and splits is not None:
+        raise ValueError("give split or splits, not both")
+    allowed = (split,) if split is not None else (tuple(splits) if splits is not None else None)
+    if allowed is not None and (not allowed or any(s not in SPLITS for s in allowed)):
+        raise ValueError(f"splits must be from {SPLITS}")
     if family not in (None, *FAMILIES):
         raise ValueError(f"family must be one of {FAMILIES}")
     chosen = [s for s in spec["scenarios"]
-              if (split is None or s["split"] == split)
+              if (allowed is None or s["split"] in allowed)
               and (family is None or s.get("family") == family)]
     if not chosen:
         raise ValueError(f"No scenarios for split={split!r}, family={family!r} in {path}")
@@ -88,13 +97,14 @@ def scenario_env(spec, name, scenario_path=V2_PATH):
     return config_env(config, spec["max_steps"], spec["observation_mode"])
 
 
-def evaluate(model, scenarios=V2_PATH, output=None, split=None, family=None, verbose=True):
-    """Shield-off evaluation on every chosen scenario.
+def evaluate(model, scenarios=V2_PATH, output=None, split=None, family=None, verbose=True,
+             splits=None):
+    """Shield-off evaluation on every chosen scenario (``splits`` = several splits).
 
     Returns {"overall": ..., "split=<s>": ..., "family=<f>": ..., "layout=<name>": ...}.
     """
     network = load_network(model)
-    spec, chosen = load_scenarios(scenarios, split, family)
+    spec, chosen = load_scenarios(scenarios, split, family, splits)
     envs, rows = {}, []
     for index, scenario in enumerate(chosen):
         name = scenario["layout"]

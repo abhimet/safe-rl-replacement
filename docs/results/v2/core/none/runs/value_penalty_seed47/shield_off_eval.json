@@ -1,0 +1,159 @@
+{
+  "model": "/scratch/zt1/project/msai635/user/smalkir1/shielded-rl/results/core/none/runs/value_penalty_seed47/value_penalty_seed47.pt",
+  "scenarios": "/scratch/zt1/project/msai635/user/smalkir1/shielded-rl/evaluation_scenarios_v2.json",
+  "scenario_version": 2,
+  "overall": {
+    "episodes": 581,
+    "success_rate": 0.03098106712564544,
+    "collision_rate": 0.4939759036144578,
+    "average_reward": -9.47228915662651,
+    "average_steps": 48.948364888123926,
+    "unsafe_proposal_rate": 0.010091775378881115,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.4750430292598967,
+    "greedy_unsafe_state_rate": 0.20654044750430292
+  },
+  "split=train": {
+    "episodes": 155,
+    "success_rate": 0.0,
+    "collision_rate": 0.4967741935483871,
+    "average_reward": -10.161935483870968,
+    "average_steps": 52.438709677419354,
+    "unsafe_proposal_rate": 0.009473425196850394,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.5032258064516129,
+    "greedy_unsafe_state_rate": 0.07741935483870968
+  },
+  "split=dev_inspected": {
+    "episodes": 71,
+    "success_rate": 0.09859154929577464,
+    "collision_rate": 0.7887323943661971,
+    "average_reward": -8.13661971830986,
+    "average_steps": 13.23943661971831,
+    "unsafe_proposal_rate": 0.059574468085106386,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.11267605633802817,
+    "greedy_unsafe_state_rate": 0.352112676056338
+  },
+  "split=heldout": {
+    "episodes": 355,
+    "success_rate": 0.030985915492957747,
+    "collision_rate": 0.43380281690140843,
+    "average_reward": -9.438309859154923,
+    "average_steps": 54.566197183098595,
+    "unsafe_proposal_rate": 0.007950028392958546,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.5352112676056338,
+    "greedy_unsafe_state_rate": 0.23380281690140844
+  },
+  "family=designed": {
+    "episodes": 354,
+    "success_rate": 0.04519774011299435,
+    "collision_rate": 0.6129943502824858,
+    "average_reward": -9.231638418079088,
+    "average_steps": 36.19491525423729,
+    "unsafe_proposal_rate": 0.01693592445172871,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.3418079096045198,
+    "greedy_unsafe_state_rate": 0.23728813559322035
+  },
+  "family=random": {
+    "episodes": 227,
+    "success_rate": 0.00881057268722467,
+    "collision_rate": 0.30837004405286345,
+    "average_reward": -9.847577092511008,
+    "average_steps": 68.83700440528635,
+    "unsafe_proposal_rate": 0.004479713298348906,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.6828193832599119,
+    "greedy_unsafe_state_rate": 0.15859030837004406
+  },
+  "layout=rooms": {
+    "episodes": 84,
+    "success_rate": 0.0,
+    "collision_rate": 0.6904761904761905,
+    "average_reward": -10.223809523809525,
+    "average_steps": 33.88095238095238,
+    "unsafe_proposal_rate": 0.020379479971890373,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.30952380952380953,
+    "greedy_unsafe_state_rate": 0.08333333333333333
+  },
+  "layout=zigzag": {
+    "episodes": 71,
+    "success_rate": 0.0,
+    "collision_rate": 0.2676056338028169,
+    "average_reward": -10.088732394366197,
+    "average_steps": 74.3943661971831,
+    "unsafe_proposal_rate": 0.0035971223021582736,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.7323943661971831,
+    "greedy_unsafe_state_rate": 0.07042253521126761
+  },
+  "layout=clutter": {
+    "episodes": 71,
+    "success_rate": 0.09859154929577464,
+    "collision_rate": 0.7887323943661971,
+    "average_reward": -8.13661971830986,
+    "average_steps": 13.23943661971831,
+    "unsafe_proposal_rate": 0.059574468085106386,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.11267605633802817,
+    "greedy_unsafe_state_rate": 0.352112676056338
+  },
+  "layout=pillars": {
+    "episodes": 69,
+    "success_rate": 0.13043478260869565,
+    "collision_rate": 0.36231884057971014,
+    "average_reward": -7.446376811594202,
+    "average_steps": 51.768115942028984,
+    "unsafe_proposal_rate": 0.006998880179171333,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.5072463768115942,
+    "greedy_unsafe_state_rate": 0.3333333333333333
+  },
+  "layout=spiral": {
+    "episodes": 59,
+    "success_rate": 0.0,
+    "collision_rate": 1.0,
+    "average_reward": -10.19322033898305,
+    "average_steps": 2.9322033898305087,
+    "unsafe_proposal_rate": 0.34104046242774566,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.0,
+    "greedy_unsafe_state_rate": 0.4067796610169492
+  },
+  "layout=heldout_1": {
+    "episodes": 89,
+    "success_rate": 0.0,
+    "collision_rate": 0.23595505617977527,
+    "average_reward": -10.025842696629216,
+    "average_steps": 76.89887640449439,
+    "unsafe_proposal_rate": 0.0030683810637054353,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.7640449438202247,
+    "greedy_unsafe_state_rate": 0.10112359550561797
+  },
+  "layout=heldout_2": {
+    "episodes": 77,
+    "success_rate": 0.012987012987012988,
+    "collision_rate": 0.24675324675324675,
+    "average_reward": -9.746753246753249,
+    "average_steps": 74.35064935064935,
+    "unsafe_proposal_rate": 0.003318777292576419,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.7402597402597403,
+    "greedy_unsafe_state_rate": 0.18181818181818182
+  },
+  "layout=heldout_3": {
+    "episodes": 61,
+    "success_rate": 0.01639344262295082,
+    "collision_rate": 0.4918032786885246,
+    "average_reward": -9.71475409836066,
+    "average_steps": 50.114754098360656,
+    "unsafe_proposal_rate": 0.009813542688910697,
+    "intervention_rate": 0.0,
+    "timeout_rate": 0.4918032786885246,
+    "greedy_unsafe_state_rate": 0.21311475409836064
+  }
+}
