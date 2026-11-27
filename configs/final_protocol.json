@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "frozen": true,
+  "frozen_on": "2026-11-26",
+  "note": "FROZEN 2026-11-26. Tuned on dev maps only (train + dev_inspected splits, seeds 0-1) by tune.py; every config tried is in docs/TUNING.md. Final runs read ONLY from this file: run_experiments.py --protocol rejects training flags, and every run records this file's sha256.",
+  "scenarios": {
+    "file": "evaluation_scenarios_v2.json",
+    "sha256": "724ab1df69d06e0503a91a0f6f3bcb6fb59cd64b6a28ac7b3eaa9017cb4907a3"
+  },
+  "train": {
+    "lr": 0.0001,
+    "n_step": 3,
+    "capacity": 10000,
+    "epsilon_fraction": 0.8,
+    "pool_size": 100,
+    "pool_seed": 7,
+    "shaping_scale": 4.0,
+    "window": 100,
+    "steps": 100000
+  },
+  "methods": {
+    "value_penalty": {
+      "penalty": 10.0
+    },
+    "fabr": {
+      "beta_min": 0.0,
+      "beta_max": 4.0
+    },
+    "fabr_fixed": {
+      "beta_min": 0.0,
+      "beta_max": 4.0,
+      "fixed_beta": "mean_beta_of_fabr_same_mode"
+    },
+    "fabr_v2": {
+      "margin": 1.0,
+      "margin_lambda": 0.1,
+      "margin_stop_grad": false
+    }
+  },
+  "methods_note": "fabr_v2_fixedtarget always uses the fabr_v2 settings, so the ablation differs only in the loss shape. value_penalty's penalty is tuned in feedback mode 'none' and used unchanged in every mode.",
+  "tiers": {
+    "quick": {
+      "seeds": [
+        42,
+        43,
+        44
+      ],
+      "configs": [
+        "unshielded",
+        "highest_q@none",
+        "highest_q@cf",
+        "value_penalty@none",
+        "fabr_v2@margin"
+      ],
+      "note": "Headline configs, 3 seeds: for a fast independent check (~30 min)."
+    },
+    "core": {
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51
+      ],
+      "configs": [
+        "unshielded",
+        "highest_q@none",
+        "highest_q@cf",
+        "value_penalty@none",
+        "fabr@none",
+        "highest_q@credit",
+        "random_safe@credit",
+        "fabr@credit",
+        "fabr_fixed@credit",
+        "fabr_v2@margin",
+        "fabr_v2_fixedtarget@margin"
+      ],
+      "note": "The reported results."
+    },
+    "full": {
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51
+      ],
+      "configs": [
+        "unshielded",
+        "random_safe@none",
+        "highest_q@none",
+        "value_penalty@none",
+        "adaptive_mix@none",
+        "fabr@none",
+        "fabr_fixed@none",
+        "random_safe@cf",
+        "highest_q@cf",
+        "value_penalty@cf",
+        "adaptive_mix@cf",
+        "fabr@cf",
+        "fabr_fixed@cf",
+        "random_safe@credit",
+        "highest_q@credit",
+        "value_penalty@credit",
+        "adaptive_mix@credit",
+        "fabr@credit",
+        "fabr_fixed@credit",
+        "fabr_v2@margin",
+        "fabr_v2_fixedtarget@margin"
+      ],
+      "note": "The complete 21-config grid (optional)."
+    }
+  },
+  "metrics": [
+    "success_rate",
+    "collision_rate",
+    "timeout_rate",
+    "average_reward",
+    "greedy_unsafe_state_rate",
+    "unsafe_proposal_rate",
+    "average_steps"
+  ]
+}

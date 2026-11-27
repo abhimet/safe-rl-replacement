@@ -11,6 +11,10 @@ methods differ only in WHICH safe action replaces an unsafe proposal.
     adaptive_mix   random_safe with probability = recent unsafe-proposal rate, else highest_q
     fabr           Feedback-Adaptive Boltzmann Replacement (our method, see below)
     fabr_fixed     ablation: FABR's Boltzmann choice with a constant beta (no feedback)
+    fabr_v2        highest_q execution; learning adds a large-margin loss on the blocked
+                   proposal (feedback mode ``margin``, see dqn.margin_loss)
+    fabr_v2_fixedtarget  ablation of fabr_v2: the same margin target, but a two-sided squared
+                   loss that never switches off
 
 FABR samples a safe action from a softmax over its z-scored Q-values with
 inverse temperature beta, and sets beta from the recent rate r at which the
@@ -28,7 +32,16 @@ import math
 import numpy as np
 
 METHODS = ("unshielded", "random_safe", "highest_q", "value_penalty",
-           "adaptive_mix", "fabr", "fabr_fixed")
+           "adaptive_mix", "fabr", "fabr_fixed", "fabr_v2", "fabr_v2_fixedtarget")
+# Margin-loss methods and the loss kind each one uses (dqn.margin_loss).
+MARGIN_METHODS = {"fabr_v2": "hinge", "fabr_v2_fixedtarget": "fixed_target"}
+HIGHEST_Q_METHODS = ("highest_q", "value_penalty", *MARGIN_METHODS)
+# What a shielded agent stores about a blocked proposal (train.py):
+#   none    only the executed transition (s, a_exec, r, s')
+#   cf      also (s, a_prop, -10, terminal): ORACLE, the outcome of an action never executed
+#   credit  (s, a_prop, r, s') INSTEAD of the executed transition (r, s' from the replacement)
+#   margin  the executed transition, plus (s, a_prop) for the margin loss (fabr_v2 only)
+FEEDBACK_MODES = ("none", "cf", "credit", "margin")
 
 
 def fabr_beta(unsafe_rate, beta_min=0.0, beta_max=4.0):
@@ -99,7 +112,7 @@ class Replacer:
             raise RuntimeError("No safe action exists in this state")
         elif self.method == "random_safe":
             executed, intervened = self.rng.choice(list(safe)), True
-        elif self.method in ("highest_q", "value_penalty"):
+        elif self.method in HIGHEST_Q_METHODS:
             executed, intervened = highest_q(safe, q_values), True
         elif self.method == "adaptive_mix":
             use_random = self.rng.random() < self.mix_probability

@@ -123,9 +123,9 @@ def test_counterfactual_collision_is_stored_for_each_intervention(tmp_path, monk
     stored = []
     original = DQNAgent.remember
 
-    def spy(self, state, action, reward, next_state, done, next_safe=None):
+    def spy(self, state, action, reward, next_state, done, next_safe=None, **kwargs):
         stored.append((action, reward, done, np.array_equal(state, next_state)))
-        return original(self, state, action, reward, next_state, done, next_safe)
+        return original(self, state, action, reward, next_state, done, next_safe, **kwargs)
 
     monkeypatch.setattr(DQNAgent, "remember", spy)
     tiny("highest_q", tmp_path)

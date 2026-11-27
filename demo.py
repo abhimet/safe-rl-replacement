@@ -1,6 +1,7 @@
 """Animate trained agents on the same map and start, with the shield ON vs OFF.
 
     python demo.py --results results/final --methods fabr unshielded --layout pillars --start 9 0
+    python demo.py --results results/core --mode margin --methods fabr_v2 --layout pillars --start 9 0
 
 Each row is one trained agent (method, seed). The left column shows it with the
 shield on (red ✕ = the shield blocked the proposed move and substituted a safe
@@ -110,9 +111,18 @@ if __name__ == "__main__":
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--layout", default="pillars", help="Any layout in evaluation_scenarios_v2.json")
     p.add_argument("--start", type=int, nargs=2, default=[9, 0], metavar=("ROW", "COL"))
+    p.add_argument("--mode", default=None,
+                   help="Feedback mode folder of a protocol output (results/<tier>/<mode>/runs); "
+                        "unshielded is always read from 'none'")
     p.add_argument("--output", default=None, help="Output path without extension")
     args = p.parse_args()
-    agents = [(m, args.seed, load_network(Path(args.results, "runs", f"{m}_seed{args.seed}",
-                                                f"{m}_seed{args.seed}.pt"))) for m in args.methods]
+
+    def run_dir(method):
+        base = Path(args.results)
+        if args.mode:
+            base = base / ("none" if method == "unshielded" else args.mode)
+        return base / "runs" / f"{method}_seed{args.seed}"
+
+    agents = [(m, args.seed, load_network(run_dir(m) / f"{m}_seed{args.seed}.pt")) for m in args.methods]
     make_demo(agents, args.layout, args.start,
               output=args.output or Path(args.results, "figures", f"demo_{args.layout}"))

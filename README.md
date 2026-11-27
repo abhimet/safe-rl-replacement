@@ -1,163 +1,203 @@
-# FABR: Feedback-Adaptive Boltzmann Replacement for shielded RL
+# FABR: replacement and feedback for shielded RL
 
 MSML635 final project. Team: Abhiram Metuku, Sai Malkireddy, Sriram Vema.
 
 **Question.** When a safety shield blocks an RL agent's unsafe action, it has to execute *some*
-safe action instead. Does the choice of replacement change what the agent learns, and whether it
-can navigate safely once the shield is removed?
+safe action instead, and the agent has to learn *something* from the blocked proposal. Do these
+choices change what the agent learns, and whether it can navigate safely once the shield is
+removed?
 
-**FABR (our method).** FABR samples the replacement from a softmax over the Q-values of the safe
-actions, with inverse temperature β = 4·(1 − r)², where r is the recent rate at which the agent's
-greedy action is unsafe. While the agent still proposes unsafe moves, replacements explore the
-safe alternatives. As it learns, they focus on the best safe action. See
-[docs/METHODS.md](docs/METHODS.md) for the full definition and
-[docs/RELATED_WORK.md](docs/RELATED_WORK.md) for how it differs from shielding and ADVICE.
+- **FABR v1** (the motivating negative result) samples the replacement from a softmax over
+  safe Q-values, with β = 4·(1 − r)² set by the greedy unsafe rate r. At 50k steps it does not
+  beat simple baselines ([v1 results](#v1-results-50k-steps-motivating)).
+- **FABR v2** (`fabr_v2`) executes the highest-Q safe action and adds a large-margin loss on
+  the blocked proposal: relu(Q(s,a_prop) − max_safe Q(s,·) + m). It uses only "this action was
+  blocked", never the outcome of an action that was not executed.
 
-## Quickstart
+See [docs/METHODS.md](docs/METHODS.md) for definitions and
+[docs/RELATED_WORK.md](docs/RELATED_WORK.md) for how this relates to shielding, DQfD and ADVICE.
+
+## For graders: reproduce in about 35 minutes
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m pytest -q tests                      # ~45 s
-
-# 1. Train + evaluate all 7 methods x 10 seeds, in both training settings (resumable:
-#    rerun the same command after an interruption). About 3.5 h for both on a laptop.
-SEEDS="42 43 44 45 46 47 48 49 50 51"
-python run_experiments.py --steps 50000 --seeds $SEEDS --jobs 4 --output results/final_cf
-python run_experiments.py --steps 50000 --seeds $SEEDS --jobs 4 --no-collision-feedback --output results/final_no_cf
-
-# 2. Figures -> results/<setting>/figures/
-python plots.py --results results/final_no_cf
-
-# 3. Animated demo: one trained agent with the shield ON vs OFF on an unseen map
-python demo.py --results results/final_no_cf --methods fabr --seed 49 --layout pillars --start 9 0
+python reproduce.py smoke verify quick
 ```
 
-To train or evaluate one model:
+| Command | What it does | Time* |
+|---|---|---|
+| `smoke` | the full test suite (unit + tiny end-to-end) | ~1 min |
+| `verify` | re-evaluates every shipped checkpoint in `docs/results/v2/` and re-aggregates; every reported number must match exactly | ~3 min |
+| `quick` | retrains the 5 headline configs × 3 seeds from scratch, using the frozen protocol | ~30 min |
+
+\*Measured on an 8-core M1 laptop with 6 parallel jobs. Every command resumes after an
+interruption: rerun it.
+
+## Full pipeline
+
+All final settings come from **one frozen file**, [`configs/final_protocol.json`](configs/final_protocol.json).
+`run_experiments.py --protocol` rejects any training flag, and every run records the protocol's
+sha256.
 
 ```bash
-python train.py --method fabr --steps 50000 --seed 42 --output results/one
-python evaluate.py --model results/one/fabr_seed42.pt
+python reproduce.py tune                          # dev-map tuning → docs/TUNING.md     (~1–1.5 h)
+python reproduce.py core --seeds 42 43 44 45 46   # reported results, batch 1           (~1.5 h)
+python reproduce.py core --seeds 47 48 49 50 51   # batch 2 + all fabr_fixed@credit     (~1.9 h)
+python reproduce.py full                          # optional: all 21 configs            (~6.5 h)
+python reproduce.py figures --results results/core
+python reproduce.py ship core                     # copy into docs/results/v2/core
 ```
 
-## Methods compared
+One run, by hand:
 
-All methods use Double DQN with the same network, budget, seeds and training maps. Only the
-replacement rule differs (`replacement.py`).
+```bash
+python train.py --method fabr_v2 --n-step 3 --steps 100000 --seed 42 --output results/one
+python train.py --method highest_q --feedback-mode credit --output results/one
+python evaluate.py --model results/one/fabr_v2_seed42.pt
+```
+
+## What is compared
+
+**Feedback mode:** what a shielded agent stores about a blocked proposal a_prop (`train.py`).
+
+| Mode | Stored | Notes |
+|---|---|---|
+| `none` | (s, a_exec, r, s') only | the agent never sees the outcome of an unsafe action |
+| `cf` | also (s, a_prop, −10, terminal) | **ORACLE**: uses the outcome of an action that was never executed (Alshiekh et al. 2018, option 1) |
+| `credit` | (s, a_prop, r, s') *instead*, with r, s' from the replacement | Alshiekh et al. option 2. Here the replacement rule decides what Q(s, a_prop) learns |
+| `margin` | (s, a_exec, r, s') + (s, a_prop) for the margin loss | FABR v2 only |
+
+**Replacement rule:** what the shield executes instead (`replacement.py`).
 
 | Method | When the proposal is unsafe, execute… |
 |---|---|
 | `unshielded` | the unsafe action (no shield) |
 | `random_safe` | a random safe action |
 | `highest_q` | the highest-Q safe action |
-| `value_penalty` | the highest-Q safe action, with a −1 training penalty per intervention |
+| `value_penalty` | highest-Q, with a tuned training penalty per intervention |
 | `adaptive_mix` | random or highest-Q, with P(random) = recent unsafe-proposal rate |
-| **`fabr`** | **a Boltzmann sample over safe Q-values, with β adapted to the greedy unsafe rate** |
-| `fabr_fixed` | ablation: the same sampling with β fixed at FABR's average β |
+| `fabr` | FABR v1: a Boltzmann sample over safe Q-values, β adapted to the greedy unsafe rate |
+| `fabr_fixed` | ablation of v1: the same sampling with β fixed at FABR's mean β |
+| **`fabr_v2`** | **highest-Q, plus the hinge margin loss on the blocked proposal** |
+| `fabr_v2_fixedtarget` | ablation of v2: same target and settings, but a two-sided loss (Q(s,a_prop) − (max_safe Q − m))² that never switches off |
 
-**Training** uses rooms, zigzag and 100 generated random maps, with every reachable start, so the
-agent cannot memorise one map. **Evaluation** is shield-off and greedy, run from every reachable
-start of 8 frozen maps (581 episodes). The maps are grouped as familiar (rooms, zigzag), clutter
-(development), unseen (pillars, heldout_1–3) and spiral (unseen, reported separately). See
-[docs/EVALUATION_PROTOCOL.md](docs/EVALUATION_PROTOCOL.md).
+**Core tier (the reported results, 11 configs × seeds 42–51).** Each config answers one question:
 
-## Results
+| Configs | Question |
+|---|---|
+| `fabr_v2@margin` vs `highest_q@none` | Does the margin loss remove shield dependence? Only the loss differs |
+| `fabr_v2@margin` vs `highest_q@cf` | How close does it get to the oracle counterfactual? |
+| `value_penalty@none` | The standard non-oracle alternative (penalty tuned with the same budget as fabr_v2) |
+| `highest_q`, `random_safe`, `fabr`, `fabr_fixed` `@credit` | The replacement-rule question, where the rule actually changes what is learned |
+| `fabr@none` | FABR v1 where its β adapts |
+| `fabr_v2_fixedtarget@margin` | Does the hinge's switching off matter? |
+| `unshielded` | Lower bound / reference |
 
-7 methods × 10 seeds (42–51) × 50,000 steps, in two training settings that differ only in
-what a shielded agent learns from a blocked action:
+The `quick` tier is unshielded, highest_q@none, highest_q@cf, value_penalty@none and
+fabr_v2@margin (3 seeds). The `full` tier is all 3 non-margin modes × 6 rules + 2 margin
+methods + unshielded (21 configs).
 
-- **Collision feedback (`cf`)**: the blocked proposal is also stored as a collision
-  (reward −10, terminal), so the agent learns what the wall would have done.
-- **No collision feedback (`no_cf`)**: the agent only learns from the action that was executed.
+**Training:** Double DQN on rooms, zigzag and 100 generated maps, with every reachable start.
+**Evaluation:** shield off, greedy, from every reachable start of 8 frozen maps (581 episodes).
+**Tuning:** navigation settings, value_penalty's penalty and fabr_v2's m / λ / stop-grad are
+tuned on development maps only: familiar (rooms, zigzag) and clutter, using seeds 0–1. They are
+then frozen ([docs/TUNING.md](docs/TUNING.md)). Held-out maps are never evaluated while tuning.
+See [docs/EVALUATION_PROTOCOL.md](docs/EVALUATION_PROTOCOL.md).
 
-Evaluation: shield OFF, greedy, 581 frozen scenarios. Cells show **success / collision** rate,
-as the mean over 10 seeds. 95% CIs, per-layout results and FABR-vs-baseline paired differences
-are in [`docs/results/`](docs/results/). Unshielded is the same in both settings, because it
-has no interventions.
+## Results (v2, frozen protocol)
 
-**With collision feedback**
+*Pending: filled in from `docs/results/v2/core/` after the frozen core run.* Each cell will show
+success / collision / timeout, mean episode reward and the greedy unsafe-state rate. Unseen
+maps are the headline. Familiar and clutter are marked † because they were used for tuning.
 
-| Method | Familiar | Clutter | Unseen | Spiral |
+| Config | **Unseen** (pillars, heldout 1–3) | **Spiral** (unseen, long paths) | Familiar† | Clutter† |
 |---|---|---|---|---|
-| Unshielded | 29% / 0% | 27% / 0% | 6% / 0% | 3% / 0% |
-| Random safe | 16% / 0% | 11% / 0% | 8% / 0% | 1% / 0% |
-| Highest-Q | 19% / 0% | 19% / 0% | 8% / 0% | 2% / 0% |
-| Value + penalty | 13% / 0% | 18% / 0% | 6% / 0% | 3% / 0% |
-| Adaptive mix | 13% / 0% | 21% / 0% | 6% / 0% | 3% / 0% |
-| **FABR** | 20% / 0% | 16% / 0% | 8% / 0% | 2% / 0% |
-| FABR fixed-β | 19% / 0% | 19% / 0% | 9% / 0% | 3% / 0% |
+| … | | | | |
 
-**Without collision feedback**
+† Used for tuning (navigation settings and method hyperparameters); not held-out evidence.
 
-| Method | Familiar | Clutter | Unseen | Spiral |
+## v1 results (50k steps, motivating)
+
+7 methods × 10 seeds (42–51) × 50,000 steps, with the pre-tuning settings, in two feedback
+settings: `cf` (oracle counterfactual) and `none` (called `no_cf` in these folders). Shield-off,
+greedy, 581 frozen scenarios. Cells show **success / collision**, as the mean over 10 seeds.
+CIs, per-layout results and paired differences are in [`docs/results/`](docs/results/). No
+tuning was done for v1. Clutter was inspected during earlier FABR development.
+
+**With the collision counterfactual (`cf`)**
+
+| Method | **Unseen** | **Spiral** | Familiar | Clutter (dev) |
 |---|---|---|---|---|
-| Unshielded | 29% / 0% | 27% / 0% | 6% / 0% | 3% / 0% |
-| Random safe | 14% / 68% | 5% / 80% | 5% / 71% | 2% / 87% |
-| Highest-Q | 18% / 69% | 2% / 80% | 1% / 65% | 1% / 78% |
-| Value + penalty | 4% / 44% | 2% / 89% | 1% / 62% | 0% / 86% |
-| Adaptive mix | 19% / 64% | 6% / 91% | 2% / 66% | 0% / 88% |
-| **FABR** | 10% / 73% | 4% / 84% | 2% / 75% | 1% / 89% |
-| FABR fixed-β | 11% / 65% | 3% / 88% | 1% / 69% | 1% / 83% |
+| Unshielded | 6% / 0% | 3% / 0% | 29% / 0% | 27% / 0% |
+| Random safe | 8% / 0% | 1% / 0% | 16% / 0% | 11% / 0% |
+| Highest-Q | 8% / 0% | 2% / 0% | 19% / 0% | 19% / 0% |
+| Value + penalty | 6% / 0% | 3% / 0% | 13% / 0% | 18% / 0% |
+| Adaptive mix | 6% / 0% | 3% / 0% | 13% / 0% | 21% / 0% |
+| FABR v1 | 8% / 0% | 2% / 0% | 20% / 0% | 16% / 0% |
+| FABR fixed-β | 9% / 0% | 3% / 0% | 19% / 0% | 19% / 0% |
 
-Any episode that is neither a success nor a collision is a timeout: the greedy policy loops
-until the 100-step limit.
+**Without feedback (`none` / `no_cf`)**
 
-### What the results show
+| Method | **Unseen** | **Spiral** | Familiar | Clutter (dev) |
+|---|---|---|---|---|
+| Unshielded | 6% / 0% | 3% / 0% | 29% / 0% | 27% / 0% |
+| Random safe | 5% / 71% | 2% / 87% | 14% / 68% | 5% / 80% |
+| Highest-Q | 1% / 65% | 1% / 78% | 18% / 69% | 2% / 80% |
+| Value + penalty | 1% / 62% | 0% / 86% | 4% / 44% | 2% / 89% |
+| Adaptive mix | 2% / 66% | 0% / 88% | 19% / 64% | 6% / 91% |
+| FABR v1 | 2% / 75% | 1% / 89% | 10% / 73% | 4% / 84% |
+| FABR fixed-β | 1% / 69% | 1% / 83% | 11% / 65% | 3% / 88% |
 
-1. **The replacement rule makes no significant difference.** FABR is not significantly better
-   than any baseline on shield-off success in either setting. Every paired 95% CI on FABR's
+Any episode that is neither a success nor a collision is a timeout.
+
+What v1 showed, and why v2 exists:
+
+1. **The replacement rule made no significant difference.** Every paired 95% CI on FABR v1's
    success difference against another shielded method contains zero
-   ([`paired.csv`](docs/results/no_cf/paired.csv)). The one significant difference goes the
-   other way: without collision feedback, FABR is worse than unshielded on familiar maps
-   (−20 ± 13 pp).
-2. **Feedback about blocked actions matters far more than which safe action replaces them.**
-   - Without it, shielded agents never see a collision, so once the shield is removed they hit
-     walls in 62–91% of episodes. This is the "dependence on the shield" the project set out
-     to measure.
-   - With the counterfactual, no method collides shield-off.
-   - The demo shows this directly: with the shield on, the `no_cf` FABR agent takes the
-     shortest path (5 interventions). With the shield off, it hits a wall in 2 steps.
-3. **The ablation: adaptation vs. a fixed temperature.**
-   - *With collision feedback*, the greedy policy stops proposing unsafe moves within about
-     2,000 steps, so FABR's β saturates at β_max = 4 and FABR becomes the fixed-β ablation
-     ([figure](docs/results/cf/figures/fabr_beta.png)).
-   - *Without collision feedback*, β does adapt (between about 2.4 and 3.1;
-     [figure](docs/results/no_cf/figures/fabr_beta.png)). Even so, FABR minus fixed-β
-     (β = 2.66) is +1.2 ± 2.4 pp unseen success and +5.1 ± 10.3 pp unseen collision. Neither
-     difference is significant.
-4. **Some baselines collide less than FABR.** Without collision feedback, FABR collides more
-   than value + penalty on familiar maps (+29 ± 14 pp, 9/10 seeds) and on unseen maps
-   (+12 ± 9 pp). On unseen maps it also collides more than highest-Q (+10 ± 10 pp).
-5. **Absolute performance is low, and the unshielded agent does best shield-off.**
-   - It learns to avoid walls from its own collisions: 81% of its training episodes end in
-     one.
-   - All agents generalise poorly to unseen maps (≤ 9% success). Most failures are timeouts.
-     A 50k-step DQN trained on 102 maps learns safety but not general navigation.
+   ([`paired.csv`](docs/results/no_cf/paired.csv)). Under `cf` and `none`, Q(s, a_prop) never
+   learns from the replacement, so the rule has little to act on. The v2 core therefore tests the
+   rules under `credit`, where it does.
+2. **Feedback about blocked actions decides shield dependence.** Without it, shielded agents hit
+   walls in 62–91% of shield-off episodes. With the oracle counterfactual, none do. v2 asks
+   whether a non-oracle signal (the margin loss) can close that gap.
+3. **β barely adapts under `cf`.** With the counterfactual, the greedy unsafe rate drops to zero
+   within about 2,000 steps, so FABR v1's β saturates at 4
+   ([figure](docs/results/cf/figures/fabr_beta.png)).
+4. **Navigation was weak** (≤ 29% familiar, ≤ 9% unseen success). v2 tunes n-step returns,
+   learning rate, replay size, ε schedule and budget on dev maps, then applies one setting to
+   every method.
 
 | | |
 |---|---|
 | ![shield-off outcomes, no_cf](docs/results/no_cf/figures/outcomes.png) | ![demo](docs/results/no_cf/figures/demo_pillars.gif) |
 
-### Limitations
+## Limitations
 
-- One environment family (10×10 grids with an exact, deterministic shield).
-- One budget (50k steps), with no hyperparameter search per method.
-- Training is not long enough for strong navigation on unseen maps.
-- β_max = 4 bounds how greedy FABR can be. FABR's schedule depends on the greedy unsafe rate,
-  and the collision counterfactual drives that rate to zero almost immediately.
+- One environment family (10×10 grids with an exact, deterministic shield). The planned
+  stochastic-hazard variant, where `cf`'s "always −10, terminal" would be miscalibrated, was not
+  run in this round. It is future work.
+- The budget is capped at 100k steps (150k only if tuning shows a clear gain).
+- Only navigation, `value_penalty` and `fabr_v2` are tuned. `adaptive_mix` and FABR v1 use
+  their v1 settings.
+- Tuning uses 2 seeds, so small differences between tuning configs are noise. The selection
+  rules are fixed in `tune.py` before any result is seen.
 
 ## Repository layout
 
 ```
+reproduce.py          one entry point: smoke, verify, quick, tune, core, full, figures, ship
+configs/final_protocol.json   the frozen final settings, tiers and seeds (the only source for final runs)
 environment.py        GridWorld, the named maps, generated training pool
-replacement.py        all replacement strategies (incl. FABR)
-dqn.py                Double DQN and the Q-networks
-train.py              training loop (one configuration for every method)
+replacement.py        replacement rules, feedback modes
+dqn.py                Double DQN, replay buffer, margin loss (FABR v2)
+train.py              training loop (feedback modes, n-step returns)
 evaluate.py           shield-off evaluation on the frozen scenario set
-run_experiments.py    train + evaluate + aggregate all methods and seeds
+run_experiments.py    protocol runner: train + evaluate + aggregate + paired comparisons
+tune.py               dev-map tuning with fixed selection rules → docs/TUNING.md
 plots.py, demo.py     figures and the shield ON/OFF animation
 make_eval_scenarios.py, evaluation_scenarios*.json, configs/holdout_suite/   frozen evaluation set
 tests/                unit and end-to-end tests
-docs/                 methods, evaluation protocol, related work; docs/results/ = final tables + figures
+docs/                 methods, evaluation protocol, related work, tuning log; docs/results/ = results
 archive/              earlier experiments, scripts, reports and results (kept for history; not used)
 ```
