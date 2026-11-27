@@ -1,6 +1,0 @@
-episode,layout,train_start,reward,training_reward,steps,timeout,success,collision,unsafe_proposals,interventions,random_replacements,value_replacements,worst_replacements,credited_proposals,counterfactual_collision_samples,adaptive_rate,greedy_unsafe_rate,greedy_history_rate,mean_unsafe_q_gap,positive_q_gap_rate,par_beta,par_beta_mean,q_max_batch,target_max_batch,loss_last_batch
-1,rooms,"(2, 5)",-10.0,-5.0378,100,1,0,0,16,16,0,0,0,0,16,0.25,0.13,0.05,-0.0294,0.2653,0.0,0.0,0.0236,0.1736,1.010798
-2,zigzag,"(8, 5)",7.8,8.4495,23,0,1,0,6,6,0,0,0,0,6,0.25,0.2174,0.25,-0.0468,0.2381,0.0,0.0,0.0272,10.1053,0.968309
-3,rooms,"(0, 6)",8.5,11.3756,16,0,1,0,3,3,0,0,0,0,3,0.2,0.1875,0.15,-0.0851,0.3333,0.0,0.0,0.0305,0.1736,0.853898
-4,zigzag,"(0, 4)",-10.0,-3.3558,100,1,0,0,54,54,0,0,0,0,54,0.6,0.58,0.7,-0.0054,0.6304,0.0,0.0,0.0362,10.2222,2.082994
-5,rooms,"(0, 2)",3.1,8.3067,70,0,1,0,41,41,0,0,0,0,41,0.45,0.5857,0.45,0.0436,0.7736,0.0,0.0,-0.1791,2.5316,2.279781

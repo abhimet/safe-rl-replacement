@@ -215,58 +215,26 @@ Bold = the 95% CI excludes 0. All comparisons, groups and metrics are in
 
 ## v1 results (50k steps, motivating)
 
-7 methods × 10 seeds (42–51) × 50,000 steps, with the pre-tuning settings, in two feedback
-settings: `cf` (oracle counterfactual) and `none` (called `no_cf` in these folders). Shield-off,
-greedy, 581 frozen scenarios. Cells show **success / collision**, as the mean over 10 seeds.
-CIs, per-layout results and paired differences are in [`docs/results/`](docs/results/). No
-tuning was done for v1. Clutter was inspected during earlier FABR development.
+Before v2, 7 methods × 10 seeds were trained for 50,000 steps with untuned settings, in two
+feedback settings: `cf` and `none` (the folders call it `no_cf`). Full tables, CIs and figures
+are in [`docs/results/cf`](docs/results/cf) and [`docs/results/no_cf`](docs/results/no_cf).
+They showed four things:
 
-**With the collision counterfactual (`cf`)**
+1. **The replacement rule made no significant difference.** Every paired 95% CI between FABR v1
+   and another shielded method contains zero. Under `cf` and `none`, Q(s, a_prop) never learns
+   from the replacement, so v2 tests the rules under `credit`.
+2. **Feedback about blocked actions decides shield dependence.** Without feedback, shielded
+   agents collided in 62–91% of shield-off episodes. With the oracle counterfactual, none did.
+   v2 asks whether a non-oracle signal can close that gap.
+3. **FABR v1's β barely adapted under `cf`.** The greedy unsafe rate reached zero within about
+   2,000 steps, so β saturated at 4.
+4. **Navigation was weak** (≤ 29% familiar, ≤ 9% unseen success), so v2 tuned the navigation
+   settings first.
 
-| Method | **Unseen** | **Spiral** | Familiar | Clutter (dev) |
-|---|---|---|---|---|
-| Unshielded | 6% / 0% | 3% / 0% | 29% / 0% | 27% / 0% |
-| Random safe | 8% / 0% | 1% / 0% | 16% / 0% | 11% / 0% |
-| Highest-Q | 8% / 0% | 2% / 0% | 19% / 0% | 19% / 0% |
-| Value + penalty | 6% / 0% | 3% / 0% | 13% / 0% | 18% / 0% |
-| Adaptive mix | 6% / 0% | 3% / 0% | 13% / 0% | 21% / 0% |
-| FABR v1 | 8% / 0% | 2% / 0% | 20% / 0% | 16% / 0% |
-| FABR fixed-β | 9% / 0% | 3% / 0% | 19% / 0% | 19% / 0% |
+The animation shows a v1 shielded agent without feedback on an unseen map. With the shield on it
+takes the shortest path; with the shield off it hits a wall within 2 steps.
 
-**Without feedback (`none` / `no_cf`)**
-
-| Method | **Unseen** | **Spiral** | Familiar | Clutter (dev) |
-|---|---|---|---|---|
-| Unshielded | 6% / 0% | 3% / 0% | 29% / 0% | 27% / 0% |
-| Random safe | 5% / 71% | 2% / 87% | 14% / 68% | 5% / 80% |
-| Highest-Q | 1% / 65% | 1% / 78% | 18% / 69% | 2% / 80% |
-| Value + penalty | 1% / 62% | 0% / 86% | 4% / 44% | 2% / 89% |
-| Adaptive mix | 2% / 66% | 0% / 88% | 19% / 64% | 6% / 91% |
-| FABR v1 | 2% / 75% | 1% / 89% | 10% / 73% | 4% / 84% |
-| FABR fixed-β | 1% / 69% | 1% / 83% | 11% / 65% | 3% / 88% |
-
-Any episode that is neither a success nor a collision is a timeout.
-
-What v1 showed, and why v2 exists:
-
-1. **The replacement rule made no significant difference.** Every paired 95% CI on FABR v1's
-   success difference against another shielded method contains zero
-   ([`paired.csv`](docs/results/no_cf/paired.csv)). Under `cf` and `none`, Q(s, a_prop) never
-   learns from the replacement, so the rule has little to act on. The v2 core therefore tests the
-   rules under `credit`, where it does.
-2. **Feedback about blocked actions decides shield dependence.** Without it, shielded agents hit
-   walls in 62–91% of shield-off episodes. With the oracle counterfactual, none do. v2 asks
-   whether a non-oracle signal (the margin loss) can close that gap.
-3. **β barely adapts under `cf`.** With the counterfactual, the greedy unsafe rate drops to zero
-   within about 2,000 steps, so FABR v1's β saturates at 4
-   ([figure](docs/results/cf/figures/fabr_beta.png)).
-4. **Navigation was weak** (≤ 29% familiar, ≤ 9% unseen success). v2 tunes n-step returns,
-   learning rate, replay size, ε schedule and budget on dev maps, then applies one setting to
-   every method.
-
-| | |
-|---|---|
-| ![shield-off outcomes, no_cf](docs/results/no_cf/figures/outcomes.png) | ![demo](docs/results/no_cf/figures/demo_pillars.gif) |
+![shield on vs off, v1 FABR without feedback](docs/results/no_cf/figures/demo_pillars.gif)
 
 ## Limitations
 
@@ -306,5 +274,4 @@ tests/                unit and end-to-end tests
 docs/                 methods, evaluation protocol, related work, tuning log (docs/tuning/ = raw logs)
 docs/results/v2/core/ the reported results: tables, figures, 110 checkpoints, per-episode CSVs
 docs/results/cf, no_cf/   v1 (50k, motivating) results
-archive/              earlier experiments, scripts, reports and results (kept for history; not used)
 ```

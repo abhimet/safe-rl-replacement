@@ -1,9 +1,0 @@
-{
-  "par_fixed_beta": 3.730920349490781,
-  "par_fixed_unsafe_rate": 0.039701912021648134,
-  "derived_from": [
-    "results/final_matched/safety_credit/par_count_seed42_steps5000/par_seed42_steps5000_spatial_cf_collision_allstarts_phi4_absolute_countaware_novelty3_summary.json",
-    "results/final_matched/safety_credit/par_count_seed43_steps5000/par_seed43_steps5000_spatial_cf_collision_allstarts_phi4_absolute_countaware_novelty3_summary.json",
-    "results/final_matched/safety_credit/par_count_seed44_steps5000/par_seed44_steps5000_spatial_cf_collision_allstarts_phi4_absolute_countaware_novelty3_summary.json"
-  ]
-}

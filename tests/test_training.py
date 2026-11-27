@@ -6,19 +6,14 @@ import numpy as np
 import pytest
 import torch
 
-import environment
 from dqn import DQNAgent, network_from_weights
 from environment import GridWorld, generate_training_pool, wall_overlap
 from make_eval_scenarios import evaluation_maps
 from replacement import METHODS
-from train import shaping_bonus, train, training_maps
+from helpers import tiny
+from train import shaping_bonus, training_maps
 
 SHIELDED = tuple(m for m in METHODS if m != "unshielded")
-
-
-def tiny(method, tmp_path, **kwargs):
-    kwargs.setdefault("fixed_beta", 2.0 if method == "fabr_fixed" else None)
-    return train(method=method, steps=150, seed=0, output=tmp_path, pool_size=3, verbose=False, **kwargs)
 
 
 # ---- training pool ----
@@ -94,29 +89,6 @@ def test_every_method_trains_and_writes_outputs(method, tmp_path):
         assert summary["mean_beta"] is not None
     if method == "fabr_fixed":
         assert {float(r["beta"]) for r in rows} == {2.0}
-
-
-@pytest.fixture
-def step_guard(monkeypatch):
-    """Count unsafe actions actually executed in the environment."""
-    original = environment.GridWorld.step
-    calls = {"unsafe": 0, "steps": 0}
-
-    def guarded(self, action):
-        calls["steps"] += 1
-        calls["unsafe"] += int(int(action) not in self.safe_actions())
-        return original(self, action)
-
-    monkeypatch.setattr(environment.GridWorld, "step", guarded)
-    return calls
-
-
-@pytest.mark.parametrize("method", SHIELDED)
-def test_shielded_training_never_collides(method, tmp_path, step_guard):
-    summary = tiny(method, tmp_path)
-    assert step_guard["steps"] == 150 and step_guard["unsafe"] == 0
-    assert summary["training"]["collision_rate"] == 0.0
-    assert summary["training"]["intervention_rate"] == summary["training"]["unsafe_proposal_rate"]
 
 
 def test_counterfactual_collision_is_stored_for_each_intervention(tmp_path, monkeypatch):

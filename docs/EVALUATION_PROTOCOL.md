@@ -28,7 +28,7 @@ Totals: 155 train, 71 dev_inspected, 355 held-out, 581 in all.
 ## Reporting rules
 
 1. **Report every layout separately.** Never pool splits.
-2. **Clutter is not held-out evidence.** It was consulted during FABR development (`archive/docs/FABR_V3_STUDY.md`). Report it as "development-inspected".
+2. **Clutter is not held-out evidence.** It was consulted during FABR development (the FABR v3 study: `git show 2e243e9:archive/docs/FABR_V3_STUDY.md`). Report it as "development-inspected".
 3. **Report Spiral on its own.** Its paths are about 3× longer than on the training maps, so a failure there mixes unfamiliarity with difficulty.
 4. Any combined held-out number must name exactly which layouts it pools, for example "held-out excl. Spiral (pillars + heldout_1..3, 296 scenarios)".
 5. Only final, frozen checkpoints are evaluated on held-out maps. Never train on `dev_inspected` or `heldout` layouts, and never select models or hyperparameters with `heldout` layouts.
@@ -43,7 +43,7 @@ On 2026-11-22 two held-out definitions were committed minutes apart: v1 `evaluat
 - rooms, zigzag, pillars and spiral scenarios are identical to v1. A test enforces this.
 - clutter: `heldout` → `dev_inspected`.
 - heldout_1..3 were added. Their files are verified against `configs/holdout_suite/manifest.json`, and evaluation refuses a modified file.
-- v2 reproduces the earlier evaluation paths exactly. Per-episode rooms/zigzag results match saved CSVs for two existing checkpoints, and the heldout_1..3 summaries equal `evaluate_holdout_suite.py`'s output (this check was run when v2 was frozen; the legacy script is now in `archive/scripts/`).
+- v2 reproduces the earlier evaluation paths exactly. Per-episode rooms/zigzag results match saved CSVs for two existing checkpoints, and the heldout_1..3 summaries equal `evaluate_holdout_suite.py`'s output (this check was run when v2 was frozen; the legacy script is in git history: `git show 2e243e9:archive/scripts/evaluate_holdout_suite.py`).
 
 ## Commands
 
@@ -76,4 +76,4 @@ Pooled groups used in `run_experiments.py`, in reporting order: **unseen** (pill
 Training uses rooms, zigzag and 100 generated maps (`environment.generate_training_pool`, seed 7).
 A generated map is rejected if its walls overlap any dev or held-out evaluation map by more than
 50% (Jaccard); `tests/test_training.py` enforces this. Historical v1/v2 provenance notes
-(e.g. the FABR v3 study) are in `archive/docs/`.
+(e.g. the FABR v3 study) are in git history under `archive/docs/` (last present in commit `2e243e9`).

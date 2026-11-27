@@ -14,7 +14,7 @@ def summarize(episodes):
         'unsafe_proposal_rate': sum(int(row['unsafe_proposals']) for row in rows) / total_steps if total_steps else 0.0,
         'intervention_rate': sum(int(row['interventions']) for row in rows) / total_steps if total_steps else 0.0,
     }
-    # Some legacy scripts do not record timeouts; omit the rate rather than report a false 0.
+    # Rows without a timeout column (old CSVs) get no timeout rate rather than a false 0.
     if all('timeout' in row for row in rows):
         result['timeout_rate'] = sum(int(row['timeout']) for row in rows) / n
     # Shield-off evaluation: fraction of start states (= every reachable non-goal cell)

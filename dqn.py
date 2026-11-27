@@ -110,17 +110,14 @@ class ConvQNetwork(nn.Module):
         return values[0] if one else values
 
 
-ARCHITECTURES = ("spatial", "conv", "mlp")
+ARCHITECTURES = {"spatial": SpatialQNetwork, "conv": ConvQNetwork, "mlp": QNetwork}
+MARGIN_KINDS = ("hinge", "fixed_target")
 
 
 def create_network(input_dim, architecture="spatial"):
-    if architecture == "mlp":
-        return QNetwork(input_dim)
-    if architecture == "spatial":
-        return SpatialQNetwork(input_dim)
-    if architecture == "conv":
-        return ConvQNetwork(input_dim)
-    raise ValueError(f"Unknown architecture: {architecture}")
+    if architecture not in ARCHITECTURES:
+        raise ValueError(f"Unknown architecture: {architecture}")
+    return ARCHITECTURES[architecture](input_dim)
 
 
 def network_from_weights(weights):
@@ -211,7 +208,7 @@ def margin_loss(q_all, proposed, safe_mask, intervened, margin, kind="hinge", st
     Returns the mean over intervened samples (0 if there are none). With stop_grad the
     max over safe actions is treated as a constant.
     """
-    if kind not in ("hinge", "fixed_target"):
+    if kind not in MARGIN_KINDS:
         raise ValueError(f"Unknown margin loss kind: {kind}")
     if not bool(intervened.any()):
         return q_all.new_zeros(())
@@ -249,10 +246,8 @@ class DQNAgent:
         self.target_sync = target_sync
         self.backup_mode = backup_mode
         self.margin_config = dict(margin_config) if margin_config else None
-        if self.margin_config:
-            margin_loss(torch.zeros(1, 4), torch.zeros(1, dtype=torch.int64),
-                        torch.ones(1, 4, dtype=torch.bool), torch.zeros(1, dtype=torch.bool),
-                        self.margin_config["margin"], self.margin_config["kind"])  # validates kind
+        if self.margin_config and self.margin_config["kind"] not in MARGIN_KINDS:
+            raise ValueError(f"Unknown margin loss kind: {self.margin_config['kind']}")
         self.updates = 0
         self.last_loss = None
         self.last_margin_loss = None

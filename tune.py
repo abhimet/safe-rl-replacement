@@ -24,7 +24,7 @@ The selection rules are fixed here, before any result is seen:
   (train + dev_inspected, 226 per seed); ties keep the earlier config.
 
 Round 2 (``--round 2``, run on Zaratan) is one navigation-improvement round on top of round 1's
-choices (read from docs/tuning/round1_selected.json, so it does not depend on rerunning round 1):
+choices (read from docs/tuning/round1/selected.json, so it does not depend on rerunning round 1):
 
   nav_r2         highest_q@cf at round 1's settings and budget. Changes, one at a time and each on
                  top of what was kept: the convolutional Q-network, then shaping with Phi = -d
@@ -76,7 +76,7 @@ PROTOCOL = Path("configs/final_protocol.json")
 PROPOSED = Path("configs/final_protocol.proposed.json")
 ROOT = Path("results/tuning")
 ROOTS = {1: ROOT, 2: Path("results/tuning_r2")}
-ROUND1_RECORD = Path("docs/tuning")  # committed copy of round 1's log.json and selected.json
+ROUND1_RECORD = Path("docs/tuning/round1")  # committed copy of round 1's log.json and selected.json
 REPORT = Path("docs/TUNING.md")
 ROUND_NOTES = {
     1: "Round 1 (MacBook, M1, torch 2.15): navigation and budget for the spatial-feature network, "

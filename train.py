@@ -47,7 +47,7 @@ import torch
 
 from collections import deque
 
-from dqn import DQNAgent
+from dqn import ARCHITECTURES, DQNAgent
 from environment import GridWorld, generate_training_pool
 from metrics import summarize
 from replacement import FEEDBACK_MODES, MARGIN_METHODS, METHODS, Replacer
@@ -305,7 +305,7 @@ if __name__ == "__main__":
     p.add_argument("--margin-lambda", type=float, default=0.5, help="fabr_v2 margin-loss weight")
     p.add_argument("--margin-stop-grad", action="store_true",
                    help="fabr_v2: no gradient through the max over safe actions")
-    p.add_argument("--architecture", choices=("spatial", "conv", "mlp"), default="spatial",
+    p.add_argument("--architecture", choices=tuple(ARCHITECTURES), default="spatial",
                    help="Q-network: spatial-feature MLP (default) or convolutional")
     p.add_argument("--shaping", choices=SHAPING, default="normalized",
                    help="potential: -scale*d/d_max (normalized, default) or -d (distance)")
